@@ -1,12 +1,26 @@
-"""Example of download script for geopotential height at 300, 500, 750, 850, 975 hPa for one year. Used to test dimension of dataset."""
+"""Download script for geopotential height at 300, 500, 750, 850, 975 hPa for climatology (2011-21)"""
 
 import cdsapi
+
+climatology = [
+    "2011", 
+    "2012", 
+    "2013", 
+    "2014", 
+    "2015", 
+    "2016", 
+    "2017", 
+    "2018", 
+    "2019", 
+    "2020", 
+    "2021", 
+               ]
 
 dataset = "reanalysis-era5-pressure-levels"
 request = {
     "product_type": ["reanalysis"],
     "variable": ["geopotential"],
-    "year": ["2011"],
+    "year": [],
     "month": [
         "01", "02", "03",
         "04", "05", "06",
@@ -45,5 +59,11 @@ request = {
     "area": [62, -20, 33, 28]
 }
 
-client = cdsapi.Client()
-client.retrieve(dataset, request).download()
+def set_request_year(r, year):
+    r["year"] = [year]
+    return r
+
+for year in climatology:
+    request = set_request_year(request, year)
+    client = cdsapi.Client()
+    client.retrieve(dataset, request).download()
