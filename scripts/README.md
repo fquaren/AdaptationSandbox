@@ -14,8 +14,8 @@ COSMO estimate: same variables, 2011-2021, Europe domain, COSMO hourly data with
 
 ## Full climatology of hourly data for surface variables (estimate)
 
-Single variable for 5 levels (300, 500, 750, 850, 975 hPa) = **~25 GB** ?
+Single variable for 5 levels (300, 500, 750, 850, 975 hPa) = **15 GB** (1.5 GB/var/year)
 
-Variables: t, u, v, w, rh, geop = **~150 GB** ?
+Variables: t, u, v, w, rh, geop = **90 GB** (15 GB * 6 var)
 
-COSMO estimate (x27/2.2): **~1800 GB** ?
+COSMO estimate (x27/2.2): **~1100 GB** (90x27/2.2)
