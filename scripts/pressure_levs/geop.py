@@ -42,8 +42,9 @@ request = {
     ],
     "data_format": "netcdf",
     "download_format": "zip",
-    "area": [62, -20, 33, 28]
+    "area": [62, -20, 33, 28],
 }
+# target = "e5_pl_z_hourly_2011_62-203328_300500700850975.nc"
 
 client = cdsapi.Client()
-client.retrieve(dataset, request).download()
+client.retrieve(dataset, request).download() # TODO: add target
