@@ -17,13 +17,13 @@ def main():
     cluster = LocalCluster(
         n_workers=12,  # Set number of workers equal to the number of CPU cores
         threads_per_worker=1,  # One thread per worker to avoid oversubscription
-        memory_limit="2GB",  # Limit memory per worker to prevent excessive memory use
+        memory_limit="4GB",  # Limit memory per worker to prevent excessive memory use
         dashboard_address=":8787",  # Optional: Expose Dask Dashboard for monitoring
     )
     client = Client(cluster)  # Attach the Dask client to the local cluster
 
     # Define the input and output directories
-    input_dir = "/Users/fquareng/data/1h_2D/"
+    input_dir = "/Users/fquareng/data/raw_data/1h_2D/"
     output_dir = "/Users/fquareng/data/1h_2D_sel"
     
     # Ensure the output directory exists
