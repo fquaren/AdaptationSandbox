@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter
 
 def main():
 
-    downsampling_factor = 12
+    downsampling_factor = 8
 
     print(f"INFO: Downsampling with a factor of {downsampling_factor}.")
 
@@ -32,8 +32,8 @@ def main():
     logging.info(f"Dask client connected to cluster with {cluster.workers} workers.")
 
     # Define the input and output directories
-    input_dir = "/Users/fquareng/data/1h_2D_sel"  # Replace with your input directory path
-    output_dir = f"/Users/fquareng/data/1h_2D_sel_blurred_x{downsampling_factor}"  # Replace with your output directory path
+    input_dir = "/Users/fquareng/data/1h_2D_sel_cropped"  # Replace with your input directory path
+    output_dir = f"/Users/fquareng/data/1h_2D_sel_cropped_blurred_x{downsampling_factor}"  # Replace with your output directory path
     
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
