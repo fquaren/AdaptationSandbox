@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter
 
 def main():
 
-    downsampling_factor = 8
+    downsampling_factor = 4
 
     print(f"INFO: Downsampling with a factor of {downsampling_factor}.")
 
