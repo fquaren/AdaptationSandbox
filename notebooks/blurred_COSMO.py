@@ -9,7 +9,7 @@ from scipy.ndimage import gaussian_filter
 
 def main():
 
-    downsampling_factor = 4
+    downsampling_factor = 8
 
     print(f"INFO: Downsampling with a factor of {downsampling_factor}.")
 
@@ -22,7 +22,7 @@ def main():
 
     # Set up Dask's distributed client with an optimized local cluster
     cluster = LocalCluster(
-        n_workers=12,  # Set number of workers equal to the number of CPU cores
+        n_workers=8,  # Set number of workers equal to the number of CPU cores
         threads_per_worker=1,  # One thread per worker to avoid oversubscription
         memory_limit="2GB",  # Limit memory per worker to prevent excessive memory use
         dashboard_address=":8787",  # Optional: Expose Dask Dashboard for monitoring
@@ -32,34 +32,36 @@ def main():
     logging.info(f"Dask client connected to cluster with {cluster.workers} workers.")
 
     # Define the input and output directories
-    input_dir = "/Users/fquareng/data/1h_2D_sel_cropped"  # Replace with your input directory path
-    output_dir = f"/Users/fquareng/data/1h_2D_sel_cropped_blurred_x{downsampling_factor}"  # Replace with your output directory path
+    input_dir = "/Users/fquareng/data/dem_squares"  # Replace with your input directory path
+    output_dir = f"/Users/fquareng/data/dem_squares_blurred_x{downsampling_factor}"  # Replace with your output directory path
     
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
     # List all NetCDF files in the input directory using glob
-    input_files = glob.glob(os.path.join(input_dir, "*.nz"))  # Adjust file extension if necessary
+    # input_files = glob.glob(os.path.join(input_dir, "*.nz"))  # Adjust file extension if necessary (selected_vars = ["RELHUM_2M", "T_2M", "PS"])
+    input_files = glob.glob(os.path.join(input_dir, "*.nc"))  # Adjust file extension if necessary (selected_vars = ["HSURF"])
 
     # Log the number of files found
     logging.info(f"Found {len(input_files)} files to process.")
 
     # List of variables to select from the NetCDF files
-    selected_vars = ["RELHUM_2M", "T_2M", "PS"]
+    # selected_vars = ["RELHUM_2M", "T_2M", "PS"]
+    selected_vars = ["HSURF"]
+    
 
     # Function to process a single file (for parallel processing)
     def process_file(file):
         try:
             input_path = os.path.join(input_dir, file)
-            output_path = os.path.join(output_dir, file.replace(".nz", f"_blurred_x{downsampling_factor}.nz"))
+            # output_path = os.path.join(output_dir, file.replace(".nz", f"_blurred_x{downsampling_factor}.nz"))
+            output_path = os.path.join(output_dir, file.replace(".nc", f"_blurred_x{downsampling_factor}.nc"))
 
             # Log the start of processing a file
             logging.info(f"Starting to process file: {file}")
 
             # Open the NetCDF file with Dask chunking
             ds = xr.open_dataset(input_path) #, chunks={"time": 1, "lat": 100, "lon": 100})  # Adjust chunking as needed
-            # print(ds.dims)  # Check dataset dimensions
-            # print(ds.chunks)
             # # Ensure chunk consistency using unify_chunks
             # ds = ds.unify_chunks()
             # # Now ds should have consistent chunking
