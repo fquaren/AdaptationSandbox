@@ -4,9 +4,13 @@ import pandas as pd
 import xarray as xr
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import pdb
+
 # Paths
-data_dir = "/Users/fquareng/data/1h_2D_sel_cropped"
-output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_clustered"
+# data_dir = "/Users/fquareng/data/1h_2D_sel_cropped"
+data_dir = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8"
+# output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_clustered"
+output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered"
 csv_file = "/Users/fquareng/data/domains_clustering.csv"
 
 # Read the CSV file
@@ -17,15 +21,15 @@ def find_indices(coord, grid):
     return (np.abs(grid - coord)).argmin()
 
 # Function to crop data from the xarray dataset
-def crop_data(dataset, x_idx, y_idx, grid_size):
-    x_min = x_idx
-    x_max = x_idx + grid_size[0]
-    y_min = y_idx
-    y_max = y_idx + grid_size[1]
+# def crop_data(dataset, x_idx, y_idx, grid_size):
+#     x_min = x_idx
+#     x_max = x_idx + grid_size[0]
+#     y_min = y_idx
+#     y_max = y_idx + grid_size[1]
     
-    # Crop the data in the given x and y range
-    cropped_data = dataset.isel(rlon=slice(x_min, x_max), rlat=slice(y_min, y_max))
-    return cropped_data
+#     # Crop the data in the given x and y range
+#     cropped_data = dataset.isel(rlon=slice(x_min, x_max), rlat=slice(y_min, y_max))
+#     return cropped_data
 
 # Function to process each file and save the cropped data
 def process_file(file, df, output_dir, data_dir):
@@ -42,18 +46,31 @@ def process_file(file, df, output_dir, data_dir):
 
             for _, row in df.iterrows():
                 # Find grid indices based on bottom-left coordinates
-                x_idx = find_indices(row["Bottom_Left_X"], rlon)
-                y_idx = find_indices(row["Bottom_Left_Y"], rlat)
+                # x_idx = find_indices(row["Bottom_Left_X"], rlon)
+                # y_idx = find_indices(row["Bottom_Left_Y"], rlat)
+
+                # x_min = rlon[::automatic_grid_size][int(row["Bottom_Left_X"])]
+                # y_min = rlat[::automatic_grid_size][int(row["Bottom_Left_Y"])]
+                # x_max = rlon[::automatic_grid_size][int(row["Bottom_Left_X"])+1]
+                # y_max = rlat[::automatic_grid_size][int(row["Bottom_Left_Y"])+1]
+
+                x_min = automatic_grid_size[0] * int(row["Bottom_Left_X"])
+                y_min = automatic_grid_size[1] * int(row["Bottom_Left_Y"])
+                x_max = x_min + automatic_grid_size[0]
+                y_max = y_min + automatic_grid_size[1]
+                
+                cropped_data = ds.isel(rlon=slice(x_min, x_max), rlat=slice(y_min, y_max))
 
                 # Crop the data
-                cropped_data = crop_data(ds, x_idx, y_idx, grid_size=automatic_grid_size)
+                # cropped_data = crop_data(ds, x_idx, y_idx, grid_size=automatic_grid_size)
 
                 # Create the cluster label directory if it doesn't exist
-                cluster_label_dir = os.path.join(output_dir, str(row["Cluster Label"]))
+                cluster = str(row["Cluster Label"])
+                cluster_label_dir = os.path.join(output_dir, cluster)
                 os.makedirs(cluster_label_dir, exist_ok=True)
 
                 # Save the cropped data
-                output_file = os.path.join(cluster_label_dir, f"{row['Bottom_Left_X']}_{row['Bottom_Left_Y']}_{file}")
+                output_file = os.path.join(output_dir, cluster, f"{row['Bottom_Left_X']}_{row['Bottom_Left_Y']}_{file}")
                 cropped_data.to_netcdf(output_file)
                 print(f"Saved cropped data to {output_file}")
 
