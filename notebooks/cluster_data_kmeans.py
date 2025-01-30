@@ -94,32 +94,33 @@ def apply_kmeans_clustering(elevation_values, temperature_values, humidity_value
     # Stack the values into a single matrix for clustering
     data = np.stack([elevation_values, temperature_values, humidity_values, pressure_values], axis=1)
 
-    # Calculate inertia for different numbers of clusters
-    inertias = []
-    for n_clusters in range(1, max_clusters + 1):
-        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-        kmeans.fit(data)
-        inertias.append(kmeans.inertia_)
+    # # Calculate inertia for different numbers of clusters
+    # inertias = []
+    # for n_clusters in range(1, max_clusters + 1):
+    #     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    #     kmeans.fit(data)
+    #     inertias.append(kmeans.inertia_)
 
-    # Plot the inertia vs. number of clusters to find the elbow
-    plt.figure(figsize=(8, 6))
-    plt.plot(range(1, max_clusters + 1), inertias, marker='o')
-    plt.title("Elbow Method for Optimal Clusters")
-    plt.xlabel("Number of Clusters")
-    plt.ylabel("Inertia")
-    plt.grid(True)
-    plt.savefig('elbow_method.png')
-    plt.show()
+    # # Plot the inertia vs. number of clusters to find the elbow
+    # plt.figure(figsize=(8, 6))
+    # plt.plot(range(1, max_clusters + 1), inertias, marker='o')
+    # plt.title("Elbow Method for Optimal Clusters")
+    # plt.xlabel("Number of Clusters")
+    # plt.ylabel("Inertia")
+    # plt.grid(True)
+    # plt.savefig('elbow_method.png')
+    # plt.show()
 
     # Choose the optimal number of clusters (elbow point)
-    optimal_clusters = np.argmin(np.diff(inertias)) + 2  # Plus 2 due to diff
+    # optimal_clusters = np.argmin(np.diff(inertias)) + 2  # Plus 2 due to diff
+    optimal_clusters = 5
     print(f"Optimal number of clusters: {optimal_clusters}")
 
     # Perform KMeans with the optimal number of clusters
     kmeans = KMeans(n_clusters=optimal_clusters, random_state=42, n_init=10)
     kmeans.fit(data)
 
-    return kmeans
+    return kmeans, optimal_clusters
 
 
 def process_file(args):
@@ -160,11 +161,11 @@ def process_file(args):
     shutil.copy(file_path, dest_path)
 
 
-def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, kmeans_model, num_workers=None):
+def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, kmeans_model, num_clusters, num_workers=None):
     """Process all NetCDF files in parallel using multiprocessing."""
     
     # Ensure cluster directories exist, and clean them if necessary
-    for i in range(8):
+    for i in range(num_clusters):
         cluster_dir = os.path.join(output_dir, f'cluster_{i}')
         if os.path.exists(cluster_dir):
             shutil.rmtree(cluster_dir)  # Clean up old files
@@ -207,7 +208,7 @@ if __name__ == "__main__":
 
     # Apply KMeans clustering with elbow method to determine optimal clusters
     print("Applying KMeans clustering...")
-    kmeans_model = apply_kmeans_clustering(elevation_values, temperature_values, humidity_values, pressure_values, max_clusters=10)
+    kmeans_model, num_clusters = apply_kmeans_clustering(elevation_values, temperature_values, humidity_values, pressure_values, max_clusters=10)
 
     # Process the NetCDF files and classify them into the KMeans clusters
-    process_netcdf_files_parallel(input_directory, dem_directory, output_directory, kmeans_model)
+    process_netcdf_files_parallel(input_directory, dem_directory, output_directory, kmeans_model, num_clusters)
