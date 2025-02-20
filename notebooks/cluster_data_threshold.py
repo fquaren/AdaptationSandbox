@@ -96,12 +96,12 @@ def process_file(args):
 
     # Classify the file into a cluster
     cluster = classify_cluster(elevation, temperature, humidity, thresholds)
-    # print(f"File {os.path.basename(file_path)} (in {subdir}) classified into cluster {cluster}")
+    print(f"File {os.path.basename(file_path)} (in {subdir}) classified into cluster {cluster}")
 
     # Move file to the corresponding cluster folder
     dest_path = os.path.join(output_dir, f'cluster_{cluster}', os.path.basename(file_path))
     shutil.copy(file_path, dest_path)
-    # print(f"Copied {os.path.basename(file_path)} to cluster_{cluster}")
+    print(f"Copied {os.path.basename(file_path)} to cluster_{cluster}")
 
 def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, num_workers=None):
     """Process all NetCDF files in parallel using multiprocessing."""
@@ -138,11 +138,11 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, nu
 
 # Example usage
 if __name__ == "__main__":
-    input_directory = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_gridded"
-    output_directory = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_threshold"
-    dem_directory = "/Users/fquareng/data/dem_squares"
+    data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+    input_directory = os.path.join(data_dir, "1h_2D_sel_cropped_gridded")
+    output_directory = os.path.join(data_dir, "1h_2D_sel_cropped_gridded_clustered_threshold")
+    dem_directory =  os.path.join(data_dir, "dem_squares")
 
-    # thresh_values = (800, 290, 70)  # Example thresholds for elevation, temperature, humidity
     print("Computing thresholds...")
     computed_thresholds = compute_thresholds(input_directory, dem_directory)
 
