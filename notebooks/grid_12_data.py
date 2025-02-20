@@ -5,10 +5,10 @@ import xarray as xr
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Paths
-# data_dir = "/Users/fquareng/data/1h_2D_sel_cropped"
-data_dir = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8"
-# output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_gridded"
-output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_gridded"
+data_dir = "/Users/fquareng/data/1h_2D_sel_cropped"
+# data_dir = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8"
+output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_gridded"
+# output_dir = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_gridded"
 csv_file = "/Users/fquareng/data/domains_clustering.csv"
 
 # Read the CSV file
