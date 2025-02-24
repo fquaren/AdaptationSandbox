@@ -1,11 +1,13 @@
+import os
+import re
+import time
+import xarray as xr
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import xarray as xr
-import os
 from torch.utils.data import Dataset, DataLoader
-import re
-import time
+from torch.utils.data import Dataset
+from tqdm import tqdm
 
 # ------------------ U-Net Model ------------------
 class UNet8x(nn.Module):
@@ -14,14 +16,19 @@ class UNet8x(nn.Module):
         
         # Elevation Downsampling Block (to match temperature resolution)
         self.downsample_elevation = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, stride=2, padding=1),  # 4x downsampling
+            nn.Conv2d(1, 16, kernel_size=3, stride=2, padding=1),  # 2x downsampling
             nn.ReLU(inplace=True),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 2x downsampling (total 8x)
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 2x downsampling (total 4x)
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 2x downsampling (total 8x)
             nn.ReLU(inplace=True),
         )
+        
+        # # Elevation Upscaling Block (to match temperature resolution)
+        # self.upscale_elevation = nn.Upsample(scale_factor=8, mode='bilinear', align_corners=True)
 
         # Define encoding layers
-        self.encoder1 = self.conv_block(33, 64)  # 32 (from elevation) + 1 (temperature)
+        self.encoder1 = self.conv_block(65, 64)  # 32 (from elevation) + 1 (temperature)
         self.encoder2 = self.conv_block(64, 128)
         self.encoder3 = self.conv_block(128, 256)
         self.pool = nn.MaxPool2d(2)
@@ -37,7 +44,7 @@ class UNet8x(nn.Module):
         self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
         self.decoder1 = self.conv_block(64 + 64, 64)
         
-        # Additional upsampling layers for 10x resolution
+        # Additional upsampling layers for 8x resolution
         self.upconv_final1 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)  # 2x
         self.upconv_final2 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)  # 4x
         self.upconv_final3 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)  # 8x
@@ -54,6 +61,12 @@ class UNet8x(nn.Module):
     def forward(self, temperature, elevation):  
         # Downsample elevation data to match temperature resolution
         elevation_downsampled = self.downsample_elevation(elevation)
+        
+        # # Upscale elevation data to match temperature resolution
+        # elevation_downsampled = self.upscale_elevation(elevation)
+
+        # Check dimensions
+        assert temperature.shape[2:] == elevation_downsampled.shape[2:], f"Temperature and elevation dimensions do not match, {temperature.shape[2:], elevation_downsampled.shape[2:]}"
 
         # Concatenate the two inputs
         x = torch.cat((temperature, elevation_downsampled), dim=1)  
@@ -80,27 +93,22 @@ class UNet8x(nn.Module):
         d1 = torch.cat((d1, e1), dim=1)  # Skip connection
         d1 = self.decoder1(d1)
         
-        # Additional upsampling for 10x resolution
+        # Additional upsampling for 8x resolution
         d_final1 = self.upconv_final1(d1)
         d_final2 = self.upconv_final2(d_final1)
         d_final3 = self.upconv_final3(d_final2)
         return self.output(d_final3)
 
 # ------------------ Dataset Class ------------------
-import torch
-import xarray as xr
-import os
-import re
-from torch.utils.data import Dataset
-
 class SingleVariableDataset(Dataset):
-    def __init__(self, input_files, elev_dir, target_files):
+    def __init__(self, variable, input_files, elev_dir, target_files):
         """
         Args:
             input_files (list): Paths to low-resolution variable (temperature) NetCDF files.
             elev_dir (str): Directory containing elevation NetCDF files named as "A_B_something.nc".
             target_files (list): Paths to corresponding high-resolution target NetCDF files.
         """
+        self.variable = variable
         self.input_files = input_files
         self.target_files = target_files
         self.elev_dir = elev_dir
@@ -134,11 +142,11 @@ class SingleVariableDataset(Dataset):
 
     def __getitem__(self, idx):
         """Loads variable input, elevation, and corresponding high-resolution target"""
-        var_file = self.input_files[idx]
+        input_file = self.input_files[idx]
         target_file = self.target_files[idx]
 
         # Extract A and B from input filename
-        A, B = self._extract_numbers(var_file)
+        A, B = self._extract_numbers(input_file)
 
         # Ensure the correct elevation file exists
         if (A, B) not in self.elev_files:
@@ -146,19 +154,19 @@ class SingleVariableDataset(Dataset):
 
         elev_file = self.elev_files[(A, B)]
 
-        # Load variable data (temperature)
-        with xr.open_dataset(var_file) as ds:
-            variable = torch.tensor(ds.variable.values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
+        # Load variable data
+        with xr.open_dataset(input_file) as ds:
+            input = torch.tensor(ds[self.variable].sel(time=ds[self.variable].time[0]).values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
 
-        # Load high-resolution target
+        # Load high-resolution target (same variable as input)
         with xr.open_dataset(target_file) as ds:
-            target = torch.tensor(ds.target_variable.values, dtype=torch.float32).unsqueeze(0)  # [1, H_target, W_target]
+            target = torch.tensor(ds[self.variable].sel(time=ds[self.variable].time[0]).values, dtype=torch.float32).unsqueeze(0)  # [1, H_target, W_target]
 
         # Load the correct elevation data
         with xr.open_dataset(elev_file) as ds:
-            elevation_data = torch.tensor(ds.elevation.values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
+            elevation_data = torch.tensor(ds["HSURF"].values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
 
-        return variable, elevation_data, target
+        return input, elevation_data, target
 
 
 # ------------------ DataLoader Function ------------------
@@ -192,18 +200,18 @@ def split_dataset(input_files, target_files):
     return (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets)
 
 
-def get_dataloaders(input_dir, target_dir, elev_file, batch_size=4):
-    input_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith(".nz")]
-    target_files = [os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.endswith(".nz")]
+def get_dataloaders(variable, input_dir, target_dir, elev_file, batch_size=4):
+    input_files = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith(".nz")])
+    target_files = sorted([os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.endswith(".nz")])
 
     # Check input and target files contain the same number of samples
     assert len(input_files) == len(target_files), "Number of input and target files must match."
 
     (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets) = split_dataset(input_files, target_files)
 
-    train_dataset = SingleVariableDataset(train_inputs, elev_file, train_targets)
-    val_dataset = SingleVariableDataset(val_inputs, elev_file, val_targets)
-    test_dataset = SingleVariableDataset(test_inputs, elev_file, test_targets)
+    train_dataset = SingleVariableDataset(variable, train_inputs, elev_file, train_targets)
+    val_dataset = SingleVariableDataset(variable, val_inputs, elev_file, val_targets)
+    test_dataset = SingleVariableDataset(variable, test_inputs, elev_file, test_targets)
 
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
@@ -224,7 +232,7 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
 
     best_val_loss = float("inf")
 
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs)):
         model.train()
         train_loss = 0.0
 
@@ -263,34 +271,6 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
     print("Training complete! Best model saved as:", save_path)
 
 
-# ------------------ Load and Train ------------------
-data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
-input_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold/cluster_0")
-target_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred/cluster_0")
-elevation_dir = os.path.join(data_path, "dem_squares")
-models_dir = "/scratch/fquareng/models/UNet-baseline"  # Directory to save trained models
-batch_size = 4
-num_epochs = 50
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-# Test id for saving the best model
-test_id = f"test_{int(time.time())}"  # e.g., test_1615292950
-best_model_path = os.path.join(models_dir, f"best_model_{test_id}.pth")
-
-# Load data
-train_loader, val_loader, test_loader = get_dataloaders(input_dir, target_dir, elevation_dir, batch_size)
-
-# Initialize model
-model = UNet8x()
-
-# Train model
-train_model(model, train_loader, val_loader, num_epochs, device=device, save_path=best_model_path)
-
-# Load best model
-model.load_state_dict(torch.load(best_model_path))
-model.to(device)
-
-
 # ------------------ Evaluate on Test Set ------------------
 def evaluate(model, test_loader, device="cuda"):
     model.eval()
@@ -305,5 +285,42 @@ def evaluate(model, test_loader, device="cuda"):
 
     test_loss /= len(test_loader)
     print(f"Test Loss: {test_loss:.4f}")
+
+# ------------------ Load, Train and Evaluate ------------------
+data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+input_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred/cluster_0")
+target_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold/cluster_0")
+elevation_dir = os.path.join(data_path, "dem_squares")
+models_dir = "/scratch/fquareng/models/UNet-Baseline"  # Directory to save trained models
+batch_size = 4
+num_epochs = 50
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Test id for saving the best model
+test_id = f"test_{int(time.time())}"  # e.g., test_1615292950
+best_model_path = os.path.join(models_dir, f"best_model_{test_id}.pth")
+
+# Variable to downscale
+variable = "T_2M"
+
+# Load data
+print("Loading the data ...")
+train_loader, val_loader, test_loader = get_dataloaders(variable, input_dir, target_dir, elevation_dir, batch_size)
+
+# Initialize model
+print("Initializing the model ...")
+model = UNet8x()
+
+# Train model
+print("Beginning training model ...")
+train_model(model, train_loader, val_loader, num_epochs, device=device, save_path=best_model_path)
+
+# Load best model
+print("Loading best model ...")
+model.load_state_dict(torch.load(best_model_path))
+model.to(device)
+
+
+
 
 evaluate(model, test_loader, device)
