@@ -18,11 +18,9 @@
 #SBATCH --time 00:30:00
 
 module load singularityce/4.1.0
-
 export SINGULARITY_BINDPATH="/scratch,/dcsrsoft,/users,/work,/reference"
-
 singularity run --nv /dcsrsoft/singularity/containers/pytorch/pytorch-ngc-24.05-2.4.sif
 
 source /users/fquareng/.bashrc
 
-micromamba run -n dwnscl python /work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/AdaptationSandbox/notebooks/train_test.py
+micromamba run -n dwnscl python /work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/AdaptationSandbox/notebooks/train.py

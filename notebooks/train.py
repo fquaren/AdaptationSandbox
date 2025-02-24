@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import xarray as xr
-import numpy as np
 import os
 from torch.utils.data import Dataset, DataLoader
 import re
+import time
 
 # ------------------ U-Net Model ------------------
 class UNet8x(nn.Module):
@@ -87,39 +87,78 @@ class UNet8x(nn.Module):
         return self.output(d_final3)
 
 # ------------------ Dataset Class ------------------
+import torch
+import xarray as xr
+import os
+import re
+from torch.utils.data import Dataset
+
 class SingleVariableDataset(Dataset):
-    def __init__(self, input_files, elev_file, target_files):
+    def __init__(self, input_files, elev_dir, target_files):
         """
         Args:
             input_files (list): Paths to low-resolution variable (temperature) NetCDF files.
-            elev_file (str): Path to elevation NetCDF file (constant).
+            elev_dir (str): Directory containing elevation NetCDF files named as "A_B_something.nc".
             target_files (list): Paths to corresponding high-resolution target NetCDF files.
         """
         self.input_files = input_files
         self.target_files = target_files
-        self.elev_file = elev_file
+        self.elev_dir = elev_dir
 
-        # Load elevation data once
-        with xr.open_dataset(self.elev_file) as ds:
-            self.elevation_data = torch.tensor(ds.elevation.values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
+        # Preload the mapping of elevation files for faster access
+        self.elev_files = self._map_elevation_files()
+
+    def _extract_numbers(self, filename):
+        """Extracts A and B from a filename like '3_6_lffd20101208160000.nz'."""
+        match = re.match(r"(\d{1,2})_(\d{1,2})_", os.path.basename(filename))  # Matches 0-11 correctly
+        if match:
+            A, B = int(match.group(1)), int(match.group(2))
+            if 0 <= A <= 11 and 0 <= B <= 11:
+                return A, B
+        raise ValueError(f"Filename {filename} does not match expected pattern A_B_*.nz")
+
+    def _map_elevation_files(self):
+        """Creates a mapping of (A, B) -> elevation file path, ensuring exact matches."""
+        elev_files = {}
+        for file in os.listdir(self.elev_dir):
+            if file.endswith(".nc"):
+                try:
+                    A, B = self._extract_numbers(file)
+                    elev_files[(A, B)] = os.path.join(self.elev_dir, file)
+                except ValueError:
+                    continue  # Ignore files that don't match the pattern
+        return elev_files
 
     def __len__(self):
         return len(self.input_files)
 
     def __getitem__(self, idx):
-        """Loads variable input and corresponding high-resolution target"""
-        temp_file = self.input_files[idx]
+        """Loads variable input, elevation, and corresponding high-resolution target"""
+        var_file = self.input_files[idx]
         target_file = self.target_files[idx]
 
-        # Load variable data
-        with xr.open_dataset(temp_file) as ds:
+        # Extract A and B from input filename
+        A, B = self._extract_numbers(var_file)
+
+        # Ensure the correct elevation file exists
+        if (A, B) not in self.elev_files:
+            raise FileNotFoundError(f"No elevation file found for {A}_{B} in {self.elev_dir}")
+
+        elev_file = self.elev_files[(A, B)]
+
+        # Load variable data (temperature)
+        with xr.open_dataset(var_file) as ds:
             variable = torch.tensor(ds.variable.values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
 
         # Load high-resolution target
         with xr.open_dataset(target_file) as ds:
             target = torch.tensor(ds.target_variable.values, dtype=torch.float32).unsqueeze(0)  # [1, H_target, W_target]
 
-        return variable, self.elevation_data, target
+        # Load the correct elevation data
+        with xr.open_dataset(elev_file) as ds:
+            elevation_data = torch.tensor(ds.elevation.values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
+
+        return variable, elevation_data, target
 
 
 # ------------------ DataLoader Function ------------------
@@ -130,15 +169,16 @@ def split_dataset(input_files, target_files):
     train_inputs, val_inputs, test_inputs = [], [], []
     train_targets, val_targets, test_targets = [], [], []
 
-    pattern = re.compile(r"lffd(\d{4})(\d{2})(\d{2})\d{6}\.nz")
+    pattern = re.compile(r"(\d{1,2})_(\d{1,2})_lffd(\d{4})(\d{2})(\d{2})\d{6}")
 
     for input_file, target_file in zip(input_files, target_files):
         # Check input file and target file contain the same date
-        assert pattern.search(input_file).group() == pattern.search(target_file).group(), "Input and target files must match."
-         
+        assert pattern.search(input_file).group(3,4,5) == pattern.search(target_file).group(3,4,5), "Input and target files must match."
+
+        pattern.search(input_file).group()
         match = pattern.search(input_file)
         if match:
-            day = int(match.group(3))
+            day = int(match.group(5))
             if day <= 21:
                 train_inputs.append(input_file)
                 train_targets.append(target_file)
@@ -152,9 +192,9 @@ def split_dataset(input_files, target_files):
     return (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets)
 
 
-def get_dataloaders(data_dir, target_dir, elev_file, batch_size=4):
-    input_files = sorted([os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith(".nz")])
-    target_files = sorted([os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.endswith(".nz")])
+def get_dataloaders(input_dir, target_dir, elev_file, batch_size=4):
+    input_files = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith(".nz")]
+    target_files = [os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.endswith(".nz")]
 
     # Check input and target files contain the same number of samples
     assert len(input_files) == len(target_files), "Number of input and target files must match."
@@ -224,25 +264,30 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
 
 
 # ------------------ Load and Train ------------------
-data_dir = "/path/to/input_data"
-target_dir = "/path/to/target_data"
-elevation_file = "/path/to/elevation_file.nc"
-models_dir = ""  # Directory to save trained models
+data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+input_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold/cluster_0")
+target_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred/cluster_0")
+elevation_dir = os.path.join(data_path, "dem_squares")
+models_dir = "/scratch/fquareng/models/UNet-baseline"  # Directory to save trained models
 batch_size = 4
 num_epochs = 50
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Test id for saving the best model
+test_id = f"test_{int(time.time())}"  # e.g., test_1615292950
+best_model_path = os.path.join(models_dir, f"best_model_{test_id}.pth")
+
 # Load data
-train_loader, val_loader, test_loader = get_dataloaders(data_dir, target_dir, elevation_file, batch_size)
+train_loader, val_loader, test_loader = get_dataloaders(input_dir, target_dir, elevation_dir, batch_size)
 
 # Initialize model
 model = UNet8x()
 
 # Train model
-train_model(model, train_loader, val_loader, num_epochs, device=device, save_path="best_model.pth")
+train_model(model, train_loader, val_loader, num_epochs, device=device, save_path=best_model_path)
 
 # Load best model
-model.load_state_dict(torch.load("best_model.pth"))
+model.load_state_dict(torch.load(best_model_path))
 model.to(device)
 
 
