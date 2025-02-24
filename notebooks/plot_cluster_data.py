@@ -155,6 +155,34 @@ def plot_variable_distributions(variables, cluster_data, num_clusters, variable_
         plt.show()
     
 
+def plot_cluster_boxplots(variables, cluster_data, num_clusters, variable_labels, figures_directory):
+    """
+    Plots a boxplot for all variables, grouped by cluster, in a single figure.
+    """
+    import pandas as pd
+
+    data = []
+    for cluster in range(num_clusters):
+        for var in variables:
+            for value in cluster_data[cluster][var]:
+                data.append({"Cluster": f"Cluster {cluster}", "Variable": variable_labels[var], "Value": value})
+    
+    df = pd.DataFrame(data)
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    sns.boxplot(x="Variable", y="Value", hue="Cluster", data=df, ax=ax)
+    
+    ax.set_title("Boxplot of Variables for Each Cluster")
+    ax.set_xlabel("Variable")
+    ax.set_ylabel("Value")
+    ax.legend(title="Cluster", bbox_to_anchor=(1.05, 1), loc='upper left')
+    fig.tight_layout()
+    
+    filename = "boxplot_variables_per_cluster.png"
+    save_plot(fig, figures_directory, filename)
+    plt.show()
+
+
 def plot_all(input_dir, dem_dir, figures_directory):
     
     num_clusters = len([f for f in os.listdir(input_dir) if f.startswith("cluster_")])
@@ -184,11 +212,15 @@ def plot_all(input_dir, dem_dir, figures_directory):
 
     variables = ["T_2M", "RELHUM_2M", "PS", "HSURF"]
 
+    # BOX PLOT =======================================================
+    plot_cluster_boxplots(variables, cluster_data, num_clusters, variable_labels, figures_directory)
+
     # SCATTER PLOTS ==================================================
     plot_cluster_scatter_grids(variables, cluster_data, num_clusters, variable_labels, variable_ranges, figures_directory)
     
-    # VARIABLE DISTRIBUTIONS ========================================
+    # VARIABLE DISTRIBUTIONS =========================================
     plot_variable_distributions(variables, cluster_data, num_clusters, variable_labels, variable_ranges, figures_directory)
+    
 
 if __name__ == "__main__":
     threshold_method = "kmeans" # "threshold", "kmeans", "hierarchical"
