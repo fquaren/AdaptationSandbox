@@ -7,6 +7,7 @@ import numpy as np
 from tqdm import tqdm
 import itertools
 import seaborn as sns
+import pandas as pd
 
 
 def collect_data_for_cluster(cluster_index, cluster_dir, dem_dir):
@@ -28,7 +29,7 @@ def collect_data_for_cluster(cluster_index, cluster_dir, dem_dir):
                 pressure = ds['PS'].values.mean()
 
                 # Corresponding DEM file for elevation
-                dem_file = f"dem_{file_name.split('_')[0]}_{file_name.split('_')[1]}.nc"
+                dem_file = f"{file_name.split('_')[0]}_{file_name.split('_')[1]}_dem.nc"
                 dem_path = os.path.join(dem_dir, dem_file)
 
                 # Read the DEM file to get elevation
@@ -157,25 +158,30 @@ def plot_variable_distributions(variables, cluster_data, num_clusters, variable_
 
 def plot_cluster_boxplots(variables, cluster_data, num_clusters, variable_labels, figures_directory):
     """
-    Plots a boxplot for all variables, grouped by cluster, in a single figure.
+    Plots separate boxplots for each variable, grouped by cluster, using multiple y-axes (faceted subplots).
     """
-    import pandas as pd
 
     data = []
     for cluster in range(num_clusters):
         for var in variables:
             for value in cluster_data[cluster][var]:
-                data.append({"Cluster": f"Cluster {cluster}", "Variable": variable_labels[var], "Value": value})
-    
+                data.append({"Cluster": f"Cluster {cluster}", "Variable": var, "Value": value})
+
     df = pd.DataFrame(data)
-    
-    fig, ax = plt.subplots(figsize=(12, 8))
-    sns.boxplot(x="Variable", y="Value", hue="Cluster", data=df, ax=ax)
-    
-    ax.set_title("Boxplot of Variables for Each Cluster")
-    ax.set_xlabel("Variable")
-    ax.set_ylabel("Value")
-    ax.legend(title="Cluster", bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    fig, axes = plt.subplots(len(variables), 1, figsize=(10, 6 * len(variables)), sharex=True)
+
+    if len(variables) == 1:
+        axes = [axes]  # Ensure axes is iterable when there's only one variable
+
+    for ax, var in zip(axes, variables):
+        sns.boxplot(x="Cluster", y="Value", data=df[df["Variable"] == var], ax=ax)
+        ax.set_title(f"Boxplot of {variable_labels[var]} by Cluster")
+        ax.set_ylabel(variable_labels[var])
+        ax.grid(True)
+
+    axes[-1].set_xlabel("Cluster")  # Label x-axis only on the last subplot
+
     fig.tight_layout()
     
     filename = "boxplot_variables_per_cluster.png"
@@ -223,7 +229,7 @@ def plot_all(input_dir, dem_dir, figures_directory):
     
 
 if __name__ == "__main__":
-    threshold_method = "kmeans" # "threshold", "kmeans", "hierarchical"
+    threshold_method = "threshold" # "threshold", "kmeans", "hierarchical"
     input_directory = f"/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_{threshold_method}"
     dem_directory = "/Users/fquareng/data/dem_squares"
     figures_directory = f"/Users/fquareng/phd/AdaptationSandbox/figures/{threshold_method}"
