@@ -219,36 +219,40 @@ def get_dataloaders(variable, input_dir, target_dir, elev_file, batch_size=4):
 
     return train_loader, val_loader, test_loader
 
+import os
+import time
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import matplotlib.pyplot as plt
+import numpy as np
 
-# ------------------ Training Function ------------------
-def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device="cuda", save_path="best_model.pth"):
-    """
-    Trains the U-Net model with given training and validation data.
-    """
+def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device="cuda", save_path="best_model.pth", patience=10):
     model.to(device)
-    criterion = nn.MSELoss()  # Regression task
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)  # Learning rate decay
-
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    
     best_val_loss = float("inf")
-
-    for epoch in tqdm(range(num_epochs)):
+    train_losses, val_losses = [], []
+    early_stop_counter = 0
+    
+    for epoch in range(num_epochs):
         model.train()
         train_loss = 0.0
-
+        
         for temperature, elevation, target in train_loader:
             temperature, elevation, target = temperature.to(device), elevation.to(device), target.to(device)
-
             optimizer.zero_grad()
-            output = model(temperature, elevation)  # Forward pass
-            loss = criterion(output, target)  # Compute loss
-            loss.backward()  # Backpropagation
+            output = model(temperature, elevation)
+            loss = criterion(output, target)
+            loss.backward()
             optimizer.step()
-
             train_loss += loss.item()
-
+        
         train_loss /= len(train_loader)
-
+        train_losses.append(train_loss)
+        
         # Validation Step
         model.eval()
         val_loss = 0.0
@@ -257,70 +261,117 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
                 temperature, elevation, target = temperature.to(device), elevation.to(device), target.to(device)
                 output = model(temperature, elevation)
                 val_loss += criterion(output, target).item()
-
+        
         val_loss /= len(val_loader)
+        val_losses.append(val_loss)
         scheduler.step()
-
+        
         print(f"Epoch [{epoch+1}/{num_epochs}] - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
-
-        # Save best model
+        
+        # Early Stopping
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), save_path)
-
+            early_stop_counter = 0
+        else:
+            early_stop_counter += 1
+        
+        if early_stop_counter >= patience:
+            print("Early stopping triggered.")
+            break
+    
     print("Training complete! Best model saved as:", save_path)
+    
+    # Save losses data
+    np.save(os.path.join(save_path, "train_losses.npy"), np.array(train_losses))
+    np.save(os.path.join(save_path, "val_losses.npy"), np.array(val_losses))
 
+    # Plot Loss Curves
+    # plt.figure(figsize=(10,5))
+    # plt.plot(range(1, len(train_losses)+1), train_losses, label='Train Loss')
+    # plt.plot(range(1, len(val_losses)+1), val_losses, label='Val Loss')
+    # plt.xlabel("Epochs")
+    # plt.ylabel("Loss")
+    # plt.legend()
+    # plt.title("Training and Validation Loss")
+    # plt.savefig(os.path.join(fig_path, "loss_curves.png"))
 
-# ------------------ Evaluate on Test Set ------------------
-def evaluate(model, test_loader, device="cuda"):
+def evaluate_and_plot(model, test_loader, device="cuda"):
     model.eval()
-    test_loss = 0.0
     criterion = nn.MSELoss()
-
+    test_losses = []
+    predictions, targets = [], []
+    
     with torch.no_grad():
         for temperature, elevation, target in test_loader:
             temperature, elevation, target = temperature.to(device), elevation.to(device), target.to(device)
             output = model(temperature, elevation)
-            test_loss += criterion(output, target).item()
-
-    test_loss /= len(test_loader)
-    print(f"Test Loss: {test_loss:.4f}")
+            loss = criterion(output, target).item()
+            test_losses.append(loss)
+            predictions.append(output.cpu().numpy())
+            targets.append(target.cpu().numpy())
+    
+    test_losses = np.array(test_losses)
+    predictions = np.array(predictions)
+    targets = np.array(targets)
+    
+    # Get top 5 and bottom 5 examples based on loss
+    top_5_idx = test_losses.argsort()[-5:][::-1]  # Highest loss
+    bottom_5_idx = test_losses.argsort()[:5]      # Lowest loss
+    
+    # Plot results
+    fig, axes = plt.subplots(5, 2, figsize=(10, 15))
+    for i, idx in enumerate(top_5_idx):
+        axes[i, 0].imshow(predictions[idx][0], cmap='coolwarm')
+        axes[i, 0].set_title(f"Top {i+1} - Prediction (Loss: {test_losses[idx]:.4f})")
+        axes[i, 1].imshow(targets[idx][0], cmap='coolwarm')
+        axes[i, 1].set_title(f"Top {i+1} - Target")
+    
+    for i, idx in enumerate(bottom_5_idx):
+        axes[i, 0].imshow(predictions[idx][0], cmap='coolwarm')
+        axes[i, 0].set_title(f"Bottom {i+1} - Prediction (Loss: {test_losses[idx]:.4f})")
+        axes[i, 1].imshow(targets[idx][0], cmap='coolwarm')
+        axes[i, 1].set_title(f"Bottom {i+1} - Target")
+    
+    plt.tight_layout()
+    plt.show()
+    print(f"Test Loss: {test_losses.mean():.4f}")
 
 # ------------------ Load, Train and Evaluate ------------------
 data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
 input_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred/cluster_0")
 target_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold/cluster_0")
 elevation_dir = os.path.join(data_path, "dem_squares")
-models_dir = "/scratch/fquareng/models/UNet-Baseline"  # Directory to save trained models
-batch_size = 4
+models_dir = "/scratch/fquareng/models/UNet-Baseline"
+batch_size = 16
 num_epochs = 50
+patience = 5
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Test id for saving the best model
-test_id = f"test_{int(time.time())}"  # e.g., test_1615292950
-best_model_path = os.path.join(models_dir, f"best_model_{test_id}.pth")
+exp_id = f"test_{int(time.time())}"
+best_model_path = os.path.join(models_dir, f"best_model_{exp_id}.pth")
 
-# Variable to downscale
 variable = "T_2M"
 
-# Load data
 print("Loading the data ...")
 train_loader, val_loader, test_loader = get_dataloaders(variable, input_dir, target_dir, elevation_dir, batch_size)
 
-# Initialize model
 print("Initializing the model ...")
 model = UNet8x()
 
-# Train model
 print("Beginning training model ...")
-train_model(model, train_loader, val_loader, num_epochs, device=device, save_path=best_model_path)
+train_model(model, train_loader, val_loader, num_epochs, device=device, save_path=best_model_path, patience=patience)
 
-# Load best model
 print("Loading best model ...")
 model.load_state_dict(torch.load(best_model_path))
 model.to(device)
 
+evaluate_and_plot(model, test_loader, device)
 
 
 
-evaluate(model, test_loader, device)
+def main():
+    return 0
+
+if __name__ == "__main__":
+    main()

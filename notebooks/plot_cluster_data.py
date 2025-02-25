@@ -223,7 +223,7 @@ def plot_all(input_dir, dem_dir, figures_directory):
     
 
 if __name__ == "__main__":
-    threshold_method = "kmeans" # "threshold", "kmeans", "hierarchical"
+    threshold_method = "threshold" # "threshold", "kmeans", "hierarchical"
     input_directory = f"/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_{threshold_method}"
     dem_directory = "/Users/fquareng/data/dem_squares"
     figures_directory = f"/Users/fquareng/phd/AdaptationSandbox/figures/{threshold_method}"
