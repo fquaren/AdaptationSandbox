@@ -226,7 +226,9 @@ def plot_all(input_dir, dem_dir, figures_directory):
     
     # VARIABLE DISTRIBUTIONS =========================================
     plot_variable_distributions(variables, cluster_data, num_clusters, variable_labels, variable_ranges, figures_directory)
-    
+
+
+
 
 if __name__ == "__main__":
     threshold_method = "threshold" # "threshold", "kmeans", "hierarchical"

@@ -138,7 +138,8 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, nu
 
 # Example usage
 if __name__ == "__main__":
-    data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+    # data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+    data_dir = "/Users/fquareng/data"
     input_directory = os.path.join(data_dir, "1h_2D_sel_cropped_gridded")
     output_directory = os.path.join(data_dir, "1h_2D_sel_cropped_gridded_clustered_threshold")
     dem_directory =  os.path.join(data_dir, "dem_squares")
