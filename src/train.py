@@ -1,5 +1,6 @@
 import os
 import re
+import argparse
 import time
 import xarray as xr
 import torch
@@ -7,7 +8,8 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.data import Dataset
-from tqdm import tqdm
+import matplotlib.pyplot as plt
+import numpy as np
 
 # ------------------ U-Net Model ------------------
 class UNet8x(nn.Module):
@@ -219,15 +221,8 @@ def get_dataloaders(variable, input_dir, target_dir, elev_file, batch_size=4):
 
     return train_loader, val_loader, test_loader
 
-import os
-import time
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import matplotlib.pyplot as plt
-import numpy as np
 
-def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device="cuda", save_path="best_model.pth", patience=10):
+def train_model(model, train_loader, val_loader, save_path, num_epochs=50, lr=1e-4, patience=10, device="cuda"):
     model.to(device)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -236,6 +231,8 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
     best_val_loss = float("inf")
     train_losses, val_losses = [], []
     early_stop_counter = 0
+
+    best_model_path = os.path.join(save_path, "best_model.pth")
     
     for epoch in range(num_epochs):
         model.train()
@@ -271,7 +268,7 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
         # Early Stopping
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), save_path)
+            torch.save(model.state_dict(), best_model_path)
             early_stop_counter = 0
         else:
             early_stop_counter += 1
@@ -280,7 +277,7 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
             print("Early stopping triggered.")
             break
     
-    print("Training complete! Best model saved as:", save_path)
+    print("Training complete! Best model saved as:", best_model_path)
     
     # Save losses data
     np.save(os.path.join(save_path, "train_losses.npy"), np.array(train_losses))
@@ -296,8 +293,11 @@ def train_model(model, train_loader, val_loader, num_epochs=50, lr=1e-4, device=
     # plt.title("Training and Validation Loss")
     # plt.savefig(os.path.join(fig_path, "loss_curves.png"))
 
-def evaluate_and_plot(model, test_loader, device="cuda"):
+
+def evaluate_and_plot(model, test_loader, save_path, device="cuda", save=True):
+
     model.eval()
+
     criterion = nn.MSELoss()
     test_losses = []
     predictions, targets = [], []
@@ -314,13 +314,17 @@ def evaluate_and_plot(model, test_loader, device="cuda"):
     test_losses = np.array(test_losses)
     predictions = np.array(predictions)
     targets = np.array(targets)
+
+    # Save all test losses
+    np.save(os.path.join(save_path, "test_losses.npy"), test_losses)
     
     # Get top 5 and bottom 5 examples based on loss
     top_5_idx = test_losses.argsort()[-5:][::-1]  # Highest loss
     bottom_5_idx = test_losses.argsort()[:5]      # Lowest loss
     
     # Plot results
-    fig, axes = plt.subplots(5, 2, figsize=(10, 15))
+    _, axes = plt.subplots(5, 2, figsize=(10, 15))
+    plt.suptitle("Mean Test Loss: {:.4f}".format(test_losses.mean()))
     for i, idx in enumerate(top_5_idx):
         axes[i, 0].imshow(predictions[idx][0], cmap='coolwarm')
         axes[i, 0].set_title(f"Top {i+1} - Prediction (Loss: {test_losses[idx]:.4f})")
@@ -334,43 +338,51 @@ def evaluate_and_plot(model, test_loader, device="cuda"):
         axes[i, 1].set_title(f"Bottom {i+1} - Target")
     
     plt.tight_layout()
-    plt.show()
-    print(f"Test Loss: {test_losses.mean():.4f}")
+    if save:
+        plt.savefig(os.path.join(save_path, "evaluation_results.png"))
+
+    return 
+
 
 # ------------------ Load, Train and Evaluate ------------------
-data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
-input_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred/cluster_0")
-target_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold/cluster_0")
-elevation_dir = os.path.join(data_path, "dem_squares")
-models_dir = "/scratch/fquareng/models/UNet-Baseline"
-batch_size = 16
-num_epochs = 50
-patience = 5
-device = "cuda" if torch.cuda.is_available() else "cpu"
-
-exp_id = f"test_{int(time.time())}"
-best_model_path = os.path.join(models_dir, f"best_model_{exp_id}.pth")
-
-variable = "T_2M"
-
-print("Loading the data ...")
-train_loader, val_loader, test_loader = get_dataloaders(variable, input_dir, target_dir, elevation_dir, batch_size)
-
-print("Initializing the model ...")
-model = UNet8x()
-
-print("Beginning training model ...")
-train_model(model, train_loader, val_loader, num_epochs, device=device, save_path=best_model_path, patience=patience)
-
-print("Loading best model ...")
-model.load_state_dict(torch.load(best_model_path))
-model.to(device)
-
-evaluate_and_plot(model, test_loader, device)
-
-
-
 def main():
+    data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+    elevation_dir = os.path.join(data_path, "dem_squares")
+
+    parser = argparse.ArgumentParser(description="Run UNet8x baseline experiment.")
+    parser.add_argument("cluster_id", type=int, help="Cluster ID for data selection")
+    parser.add_argument("exp_id", type=str, help="Experiment ID for logging")
+    args = parser.parse_args()
+    
+    cluster_id = args.cluster_id  # Retrieve the cluster ID from arguments
+    exp_id = args.exp_id  # Retrieve the experiment ID from arguments
+
+    input_dir = os.path.join(data_path, f"1h_2D_sel_cropped_gridded_clustered_threshold_blurred/cluster_{cluster_id}")
+    target_dir = os.path.join(data_path, f"1h_2D_sel_cropped_gridded_clustered_threshold/cluster_{cluster_id}")
+
+    variable = "T_2M"
+
+    exp_dir = f"UNet8x-baseline-T2M/{exp_id}"
+    output_dir = os.path.join("/scratch/fquareng/experiments/", exp_dir)
+    os.makedirs(output_dir, exist_ok=True)
+
+    batch_size = 16
+    num_epochs = 50
+    patience = 5
+    device = "cuda"
+
+    print(f"Running experiment {exp_id} for variable {variable} ...")
+    # best_model_path = os.path.join(output_dir, f"best_model_{exp_id}.pth")
+    train_loader, val_loader, test_loader = get_dataloaders(variable, input_dir, target_dir, elevation_dir, batch_size)
+    model = UNet8x()
+    # train_model(model, train_loader, val_loader, save_path=output_dir, num_epochs=num_epochs, device=device, patience=patience)
+    
+    best_model_path = os.path.join(output_dir, f"best_model_{exp_id}.pth")
+    model.load_state_dict(torch.load(best_model_path))
+    model.to(device)
+    
+    evaluate_and_plot(model, test_loader, output_dir)
+
     return 0
 
 if __name__ == "__main__":
