@@ -1,101 +1,15 @@
+import numpy as np
+from scipy.interpolate import RectBivariateSpline
 from tqdm import tqdm
 import os
-import glob
 import torch
 import torch.nn as nn
 import xarray as xr
-import numpy as np
 import re
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-import pdb
 import argparse
-
-class UNet8x(nn.Module):
-    def __init__(self):
-        super(UNet8x, self).__init__()
-        
-        # Elevation Downsampling Block (to match variable resolution)
-        self.downsample_elevation = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=3, stride=2, padding=1),  # 2x downsampling
-            nn.ReLU(inplace=True),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),  # 2x downsampling (total 4x)
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 2x downsampling (total 8x)
-            nn.ReLU(inplace=True),
-        )
-
-        # Define encoding layers
-        self.encoder1 = self.conv_block(65, 64)  # 32 (from elevation) + 1 (variable)
-        self.encoder2 = self.conv_block(64, 128)
-        self.encoder3 = self.conv_block(128, 256)
-        self.pool = nn.MaxPool2d(2)
-        
-        # Bottleneck
-        self.bottleneck = self.conv_block(256, 512)
-        
-        # Define decoding layers
-        self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        self.decoder3 = self.conv_block(256 + 256, 256)
-        self.upconv2 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.decoder2 = self.conv_block(128 + 128, 128)
-        self.upconv1 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.decoder1 = self.conv_block(64 + 64, 64)
-        
-        # Additional upsampling layers for 8x resolution
-        self.upconv_final1 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)  # 2x
-        self.upconv_final2 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)  # 4x
-        self.upconv_final3 = nn.ConvTranspose2d(64, 64, kernel_size=2, stride=2)  # 8x
-        self.output = nn.Conv2d(64, 1, kernel_size=1)  # Final output layer
-        
-    def conv_block(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True)
-        )
-    
-    def forward(self, variable, elevation):  
-        # Downsample elevation data to match variable resolution
-        elevation_downsampled = self.downsample_elevation(elevation)
-
-        # Check dimensions
-        assert variable.shape[2:] == elevation_downsampled.shape[2:], \
-            f"Selected variable and elevation dimensions do not match, {variable.shape[2:], elevation_downsampled.shape[2:]}"
-
-        # Concatenate the two inputs
-        x = torch.cat((variable, elevation_downsampled), dim=1)  
-        
-        # Encoder
-        e1 = self.encoder1(x)  
-        p1 = self.pool(e1)
-        e2 = self.encoder2(p1)
-        p2 = self.pool(e2)
-        e3 = self.encoder3(p2)
-        p3 = self.pool(e3)
-        
-        # Bottleneck
-        b = self.bottleneck(p3)
-        
-        # Decoder
-        d3 = self.upconv3(b)
-        d3 = torch.cat((d3, e3), dim=1)  # Skip connection
-        d3 = self.decoder3(d3)
-        d2 = self.upconv2(d3)
-        d2 = torch.cat((d2, e2), dim=1)  # Skip connection
-        d2 = self.decoder2(d2)
-        d1 = self.upconv1(d2)
-        d1 = torch.cat((d1, e1), dim=1)  # Skip connection
-        d1 = self.decoder1(d1)
-        
-        # Additional upsampling for 8x resolution
-        d_final1 = self.upconv_final1(d1)
-        d_final2 = self.upconv_final2(d_final1)
-        d_final3 = self.upconv_final3(d_final2)
-        return self.output(d_final3)
-    
 
 
 class SingleVariableDataset(Dataset):
@@ -294,7 +208,35 @@ def get_cluster_dataloaders(variable, input_path, target_path, dem_dir, batch_si
     return train_loaders, val_loaders, test_loaders
 
 
-def evaluate_and_plot_UNet(model, criterion, test_loaders, save_path, device="cuda", save=True):
+def upscale_array_spline(arr: np.ndarray, new_size=(128, 128), kx=1, ky=1) -> np.ndarray:
+    """
+    Upscales a 2D numpy array from 16x16 to 128x128 using `RectBivariateSpline`.
+
+    Parameters:
+    - arr (np.ndarray): Input 2D array of shape (16, 16).
+    - new_size (tuple): Desired output size (128, 128).
+    - kx, ky (int): Degrees of the spline in x and y directions (default=3 for cubic).
+
+    Returns:
+    - np.ndarray: Upscaled 2D array of shape (128, 128).
+    """
+    # Original grid points
+    arr = arr.squeeze()
+    x = np.arange(arr.shape[1])
+    y = np.arange(arr.shape[0])
+
+    # New grid points
+    x_new = np.linspace(0, arr.shape[1] - 1, new_size[1])
+    y_new = np.linspace(0, arr.shape[0] - 1, new_size[0])
+
+    # Create spline interpolator
+    interpolator = RectBivariateSpline(y, x, arr, kx=kx, ky=ky)
+
+    # Evaluate the interpolator at new grid points
+    return interpolator(y_new, x_new)
+
+
+def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, save=True):
     """
     Evaluates the model on the test datasets from multiple clusters, computes test loss, and plots results.
     
@@ -309,7 +251,13 @@ def evaluate_and_plot_UNet(model, criterion, test_loaders, save_path, device="cu
     Returns:
         float: The mean test loss across all clusters.
     """
-    model.eval()
+    
+    if model == "linear":
+        kx, ky = 1, 1
+    if model == "quadratic":
+        kx, ky = 2, 2
+    if model == "cubic":
+        kx, ky = 3, 3
     
     criterion = criterion
     all_test_losses = []
@@ -321,16 +269,16 @@ def evaluate_and_plot_UNet(model, criterion, test_loaders, save_path, device="cu
         test_losses = []
         predictions, targets, elevations, inputs = [], [], [], []
         
-        with torch.no_grad():
-            for temperature, elevation, target in tqdm(test_loader):
-                temperature, elevation, target = temperature.to(device), elevation.to(device), target.to(device)
-                output = model(temperature, elevation)
-                loss = criterion(output, target).item()
-                test_losses.append(loss)
-                predictions.append(output.cpu().numpy())
-                targets.append(target.cpu().numpy())
-                elevations.append(elevation.cpu().numpy())
-                inputs.append(temperature.cpu().numpy())
+        for temperature, elevation, target in tqdm(test_loader):
+            temperature = temperature.numpy()
+            output = upscale_array_spline(arr=temperature, kx=kx, ky=ky)
+            output = torch.from_numpy(output).unsqueeze(0).unsqueeze(0)
+            loss = criterion(output, target)
+            test_losses.append(loss)
+            predictions.append(output)
+            targets.append(target)
+            elevations.append(elevation)
+            inputs.append(temperature)
         
         test_losses = np.array(test_losses)
         predictions = np.concatenate(predictions, axis=0)
@@ -340,7 +288,8 @@ def evaluate_and_plot_UNet(model, criterion, test_loaders, save_path, device="cu
 
         # Save test losses and predictions for the current cluster
         np.save(os.path.join(save_path, f"{cluster_name}_test_losses.npy"), test_losses)
-        # np.save(os.path.join(save_path, f"{cluster_name}_predictions.npy"), predictions) # TODO save also filename
+        # np.save(os.path.join(save_path, f"{cluster_name}_predictions.npy"), predictions) 
+        # TODO save also filename
         
         all_test_losses.extend(test_losses)  # Accumulate all cluster test losses
         # all_predictions.extend(predictions)  # Accumulate all cluster predictions
@@ -409,64 +358,26 @@ def evaluate_and_plot_UNet(model, criterion, test_loaders, save_path, device="cu
 
 data_path = "/Users/fquareng/data/"
 dem_path = "dem_squares"
-# exp_path = "/Users/fquareng/experiments/x50d/"
 
-# Get argument for local or curnagl config
 parser = argparse.ArgumentParser()
 parser.add_argument("--exp_name", type=str, default=None, help="Path of model to evaluate")
+parser.add_argument("--method", type=str, default=None, help="Interpolation model")
 args = parser.parse_args()
 exp_path = os.path.join("/Users/fquareng/experiments/", args.exp_name)
-model_path = os.path.join(exp_path, "best_model.npy")
-if exp_path is None:
-    print("Select model to evaluate using argument --exp_name.")
-else:
-    print("Evaluating model at", model_path)
-
-model_path = os.path.join(exp_path, "best_model.pth")
-
-model = UNet8x()
-
-device = "cpu"
-if device == "gpu" and torch.backends.mps.is_available():
-    device = torch.device("mps")
-    print("MPS is available!")
-else:
-    device = torch.device("cpu")
-    print("Neither NVIDIA nor MPS not available, using CPU.")
-
-model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
-model.eval()
-model.to(device)
+os.makedirs(exp_path, exist_ok=True)
 
 _, _, test_loaders = get_cluster_dataloaders(
     variable="T_2M",
     input_path=os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred"),
     target_path=os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold"),
     dem_dir=os.path.join(data_path, dem_path),
-    batch_size=4
+    batch_size=1
 )
 
-mean_test_loss = evaluate_and_plot_UNet(
-    model=model,
+mean_test_loss = evaluate_and_plot_interpolation(
+    model=args.method,
     criterion=nn.MSELoss(),
     test_loaders=test_loaders,
     save_path=exp_path,
-    device=device,
     save=True,
 )
-
-# Plot training metrics
-train_losses = np.load(os.path.join(exp_path, "train_losses.npy"))
-val_losses = np.load(os.path.join(exp_path, "val_losses.npy"))
-fig = plt.figure()
-plt.title(f"Training metrics UNet8x model trained on cluster 2\nMean test loss: {mean_test_loss}")
-plt.plot(train_losses)
-plt.plot(val_losses)
-plt.yscale("log")
-plt.savefig(os.path.join(exp_path, f"training_metrics.png"))
-
-# Plot number of samples in cluster vs test loss on cluster 
-
-# TODO
-# Get filenames on which the model performs the best and worst. Why are certain images are performing better than others?
-# Save predictions divided per cluster with filenames
