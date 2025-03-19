@@ -459,7 +459,7 @@ mean_test_loss = evaluate_and_plot_UNet(
 train_losses = np.load(os.path.join(exp_path, "train_losses.npy"))
 val_losses = np.load(os.path.join(exp_path, "val_losses.npy"))
 fig = plt.figure()
-plt.title(f"Training metrics UNet8x model trained on cluster 2\nMean test loss: {mean_test_loss}")
+plt.title(f"Training metrics UNet8x model trained on single cluster\nMean test loss: {mean_test_loss}")
 plt.plot(train_losses)
 plt.plot(val_losses)
 plt.yscale("log")
