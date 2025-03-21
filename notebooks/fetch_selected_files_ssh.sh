@@ -45,7 +45,8 @@ mapfile -t files < ~/2011_files.txt
 # Loop through files and categorize them by date using awk for fast parsing
 for file in "${files[@]}"; do
     # Extract date and hour from the file name using awk (avoids multiple commands)
-    read -r date_part hour_part <<< $(echo "$file" | awk -F '[^0-9]*' '{print $1, substr($2,9,2)}')
+    date_part=$(echo "$file" | awk -F '[^0-9]*' '{print ($2,1,8)}')
+    hour_part=$(echo "$file" | awk -F '[^0-9]*' '{print substr($2,9,2)}')
 
     # Append the hour and filename to the associative array for the corresponding date
     files_by_date["$date_part"]+="$hour_part $file "
