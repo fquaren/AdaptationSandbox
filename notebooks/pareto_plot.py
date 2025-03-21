@@ -163,9 +163,8 @@ plt.scatter(mse_values["interpolation"], error_values["interpolation"], color='r
 # plt.plot(x_vals, y_vals, label="y = -1/6x + 1.179", linestyle="--", color="r", alpha=0.6)
 
 # Add labels and title
-plt.title("UNet8x Pareto Plot")
-plt.xlabel('Mean Squared Error (MSE)')
-plt.ylabel('Consistency Error')
+plt.xlabel('Mean Squared Error (MSE) [K]')
+plt.ylabel('Consistency Error [K]')
 # plt.xlim((0,2))
 # plt.ylim((0,2))
 plt.grid(True)
