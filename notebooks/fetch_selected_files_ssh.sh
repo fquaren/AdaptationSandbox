@@ -23,15 +23,16 @@ REMOTE_HOST="balfrin.cscs.ch"
 REMOTE_PATH="/capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_climate/output/lm_f/1h_2D"
 LOCAL_PATH="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/T_2M"
 
-# Temporary file to store the list of selected files
-TMP_FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
+# File to store the list of selected files
+FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
 
 # Step 1: SSH into the remote server and find the selected files
-ssh $REMOTE_USER@$REMOTE_HOST << 'EOF' > $TMP_FILE_LIST
+ssh $REMOTE_USER@$FRONTEND_HOST 
+ssh $REMOTE_USER@$REMOTE_HOST << 'EOF' > /users/fquareng/selected_files.txt
 cd /capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_climate/output/lm_f/1h_2D
 
 # List all files, filter only those from the year 2011, and sort them
-ls lffd2011*.nz | sort > all_files.txt
+ls lffd2011*.nz | sort > /users/fquareng/all_files.txt
 
 # Initialize shift counter
 shift=0
@@ -45,7 +46,7 @@ while read file; do
     hour_part=\$(echo "\$file" | grep -oE '[0-9]{10}' | cut -c9-10)
     
     files_by_date[\$date_part]+="\$hour_part \$file\n"
-done < all_files.txt
+done < /users/fquareng/all_files.txt
 
 # Sort dates
 sorted_dates=(\$(printf "%s\n" "\${!files_by_date[@]}" | sort))
@@ -81,7 +82,7 @@ done
 EOF
 
 # Step 2: Copy the selected files from the remote server
-rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/selected_files.txt $TMP_FILE_LIST
+rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:/users/fquareng/selected_files.txt $TMP_FILE_LIST
 
 # Step 3: Copy the selected NetCDF files from remote to local
 mkdir -p $LOCAL_PATH
