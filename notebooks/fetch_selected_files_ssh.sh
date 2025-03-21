@@ -27,7 +27,7 @@ LOCAL_PATH="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/T_2M"
 FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
 
 # Step 1: SSH into the remote server and find the selected files
-ssh -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST << 'EOF' > ~/selected_files.txt
+ssh -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST << "EOF" > ~/selected_files.txt
 cd /capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_climate/output/lm_f/1h_2D
 
 # List all files, filter only those from the year 2011, and sort them
@@ -56,7 +56,7 @@ for date in "\${sorted_dates[@]}"; do
     selected_hours=(\$(( (0 + shift) % 24 )) \$(( (8 + shift) % 24 )) \$(( (15 + shift) % 24 )))
 
     # Extract file list for the date
-    IFS=$'\n'
+    IFS=\$'\n'
     files=(\$(echo -e "\${files_by_date[\$date]}" | sort -n))
 
     # Select files matching the desired hours
