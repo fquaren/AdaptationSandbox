@@ -86,7 +86,7 @@ rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:$RE
 # Step 3: Copy the selected NetCDF files from remote to local
 mkdir -p $LOCAL_PATH
 # rsync -av --files-from=$TMP_FILE_LIST $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
-rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST --files-from=$TMP_FILE_LIST $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/"
+rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" --files-from=$TMP_FILE_LIST $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
 
 # Step 4: Extract the "T_2M" variable and save as new files
 cd $LOCAL_PATH
