@@ -31,7 +31,7 @@ ssh -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST << "EOF" > ~/select
 cd /capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_climate/output/lm_f/1h_2D
 
 # List all files, filter only those from the year 2011, and sort them
-ls lffd2011*.nz | sort > ~/all_files.txt
+find lffd2011*.nz -type f | sort > ~/all_files.txt
 
 # Initialize shift counter
 shift=0
@@ -39,44 +39,48 @@ shift=0
 # Declare an associative array to group files by date
 declare -A files_by_date
 
-# Loop through files and categorize them by date
-while read file; do
-    date_part=\$(echo "\$file" | grep -oE '2011[0-9]{4}')
-    hour_part=\$(echo "\$file" | grep -oE '[0-9]{10}' | cut -c9-10)
-    
-    files_by_date[\$date_part]+="\$hour_part \$file\n"
-done < ~/all_files.txt
+# Use mapfile to load all files into an array for faster processing
+mapfile -t files < ~/all_files.txt
+
+# Loop through files and categorize them by date using awk for fast parsing
+for file in "${files[@]}"; do
+    # Extract date and hour from the file name using awk (avoids multiple commands)
+    read -r date_part hour_part <<< $(echo "$file" | awk -F '[^0-9]*' '{print $1, substr($2,9,2)}')
+
+    # Append the hour and filename to the associative array for the corresponding date
+    files_by_date["$date_part"]+="$hour_part $file "
+done
 
 # Sort dates
-sorted_dates=(\$(printf "%s\n" "\${!files_by_date[@]}" | sort))
+sorted_dates=($(for date in "${!files_by_date[@]}"; do echo "$date"; done | sort))
 
 # Process each day and select the required hours
-for date in "\${sorted_dates[@]}"; do
+for date in "${sorted_dates[@]}"; do
     # Define the selected hours for the current shift
-    selected_hours=(\$(( (0 + shift) % 24 )) \$(( (8 + shift) % 24 )) \$(( (15 + shift) % 24 )))
+    selected_hours=($(( (shift) % 24 )) $(( (8 + shift) % 24 )) $(( (15 + shift) % 24 )))
 
-    # Extract file list for the date
-    IFS=\$'\n'
-    files=(\$(echo -e "\${files_by_date[\$date]}" | sort -n))
+    # Extract file list for the date (already sorted)
+    IFS=$'\n' read -r -a files <<< "${files_by_date[$date]}"
 
     # Select files matching the desired hours
     selected_files=()
-    for entry in "\${files[@]}"; do
-        read -r hour filename <<< "\$entry"
-        for h in "\${selected_hours[@]}"; do
-            if [[ "\$hour" -eq "\$h" ]]; then
-                selected_files+=("\$filename")
-            fi
-        done
+    for entry in "${files[@]}"; do
+        # Extract hour and filename
+        read -r hour filename <<< "$entry"
+
+        # Check if the hour matches any of the selected hours
+        if [[ " ${selected_hours[@]} " =~ " $hour " ]]; then
+            selected_files+=("$filename")
+        fi
     done
 
     # Print selected files (to be captured in selected_files.txt)
-    if [[ "\${#selected_files[@]}" -eq 3 ]]; then
-        printf "%s\n" "\${selected_files[@]}"
+    if [[ ${#selected_files[@]} -eq 3 ]]; then
+        printf "%s\n" "${selected_files[@]}"
     fi
 
     # Increment shift
-    shift=\$(( (shift + 1) % 24 ))
+    shift=$(( (shift + 1) % 24 ))
 done
 EOF
 
@@ -96,3 +100,56 @@ while read file; do
     # Alternative using NCO:
     # ncks -v T_2M "$file" "$new_file"
 done < $FILE_LIST
+
+
+
+# # List all files, filter only those from the year 2011, and sort them
+# ls lffd2011*.nz | sort > ~/all_files.txt
+
+# # Initialize shift counter
+# shift=0
+
+# # Declare an associative array to group files by date
+# declare -A files_by_date
+
+# # Loop through files and categorize them by date
+# while read file; do
+#     # Extract date and hour from the file name
+#     date_part=$(echo "$file" | grep -oE '2011[0-9]{4}')
+#     hour_part=$(echo "$file" | grep -oE '[0-9]{10}' | cut -c9-10)
+
+#     # Append the hour and filename to the associative array for the corresponding date
+#     files_by_date["$date_part"]+="$hour_part $file "
+# done < ~/all_files.txt
+
+# # Sort dates
+# sorted_dates=(\$(printf "%s\n" "\${!files_by_date[@]}" | sort))
+
+# # Process each day and select the required hours
+# for date in "\${sorted_dates[@]}"; do
+#     # Define the selected hours for the current shift
+#     selected_hours=(\$(( (0 + shift) % 24 )) \$(( (8 + shift) % 24 )) \$(( (15 + shift) % 24 )))
+
+#     # Extract file list for the date
+#     IFS=\$'\n'
+#     files=(\$(echo -e "\${files_by_date[\$date]}" | sort -n))
+
+#     # Select files matching the desired hours
+#     selected_files=()
+#     for entry in "\${files[@]}"; do
+#         read -r hour filename <<< "\$entry"
+#         for h in "\${selected_hours[@]}"; do
+#             if [[ "\$hour" -eq "\$h" ]]; then
+#                 selected_files+=("\$filename")
+#             fi
+#         done
+#     done
+
+#     # Print selected files (to be captured in selected_files.txt)
+#     if [[ "\${#selected_files[@]}" -eq 3 ]]; then
+#         printf "%s\n" "\${selected_files[@]}"
+#     fi
+
+#     # Increment shift
+#     shift=\$(( (shift + 1) % 24 ))
+# done
