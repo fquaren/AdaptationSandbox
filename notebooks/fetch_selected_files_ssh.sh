@@ -49,8 +49,13 @@ for file in "${files[@]}"; do
     # Extract hour part (hh) from the filename
     hour_part=$(echo "$file" | awk '{print substr($0, 13, 2)}')  # From the 13th character, get 2 characters
 
-    # Append the hour and filename to the associative array for the corresponding date
-    files_by_date["$date_part"]+="$hour_part $file "
+    # Ensure date_part is not empty before proceeding
+    if [[ -n "$date_part" && -n "$hour_part" ]]; then
+        # Append the hour and filename to the associative array for the corresponding date
+        files_by_date["$date_part"]+="$hour_part $file "
+    else
+        echo "Skipping invalid filename: $file"
+    fi
 done
 
 # Sort dates
