@@ -24,11 +24,10 @@ REMOTE_PATH="/capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_
 LOCAL_PATH="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/T_2M"
 
 # File to store the list of selected files
-# FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
 FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
 
 # Step 1: SSH into the remote server and find the selected files
-ssh -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST << 'EOF'
+ssh -T -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST <<EOF
 cd /capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_climate/output/lm_f/1h_2D
 
 # List all files, filter only those from the year 2011, and sort them
@@ -41,7 +40,7 @@ shift=0
 declare -A files_by_date
 
 # Use mapfile to load all files into an array for faster processing
-mapfile -t files < ~/all_files.txt
+mapfile -t files < ~/2011_files.txt
 
 # Loop through files and categorize them by date using awk for fast parsing
 for file in "${files[@]}"; do
@@ -83,21 +82,18 @@ for date in "${sorted_dates[@]}"; do
     # Increment shift
     shift=$(( (shift + 1) % 24 ))
 done
-EOF > $FILE_LIST
+EOF
 
-# Step 2: Copy the selected files from the remote server
-# rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:~/selected_files.txt $FILE_LIST
+# Step 2: Copy the selected files from the remote server to local
+rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:~/selected_files.txt $FILE_LIST
 
 # Step 3: Copy the selected NetCDF files from remote to local
 mkdir -p $LOCAL_PATH
-# rsync -av --files-from=$FILE_LIST $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
 rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" --files-from=$FILE_LIST $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
 
 # Step 4: Extract the "T_2M" variable and save as new files
 cd $LOCAL_PATH
 while read file; do
-    new_file="T_2M_{file%.nz}.nz"
+    new_file="T_2M_${file%.nz}.nz"
     cdo selname,T_2M "$file" "$new_file"  # Using CDO to extract the variable
-    # Alternative using NCO:
-    # ncks -v T_2M "$file" "$new_file"
 done < $FILE_LIST
