@@ -40,16 +40,19 @@ shift=0
 declare -A files_by_date
 
 # Use mapfile to load all files into an array for faster processing
-mapfile -t files < ~/2011_files.txt
+files=()
+while IFS= read -r line; do
+    files+=("$line")
+done < ~/2011_files.txt
 
 # Loop through files and categorize them by date using awk for fast parsing
 for file in "${files[@]}"; do
     # Extract date part (YYYYMMDD) from the filename
-    date_part=$(echo "$file" | awk '{print substr($0, 5, 8)}')  # From the 5th character, get 8 characters
+    date_part=$(echo "$file" | awk '{print substr($0, 5, 8)}')  # Extract YYYYMMDD
     # Extract hour part (hh) from the filename
-    hour_part=$(echo "$file" | awk '{print substr($0, 13, 2)}')  # From the 13th character, get 2 characters
+    hour_part=$(echo "$file" | awk '{print substr($0, 13, 2)}')  # Extract hh
 
-    # Ensure date_part is not empty before proceeding
+    # Ensure date_part and hour_part are not empty
     if [[ -n "$date_part" && -n "$hour_part" ]]; then
         # Append the hour and filename to the associative array for the corresponding date
         files_by_date["$date_part"]+="$hour_part $file "
