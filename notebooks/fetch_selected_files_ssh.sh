@@ -27,7 +27,7 @@ LOCAL_PATH="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/T_2M"
 FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
 
 # Step 1: SSH into the remote server and find the selected files
-ssh -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST << "EOF" > ~/selected_files.txt
+ssh -J $REMOTE_USER@$FRONTEND_HOST $REMOTE_USER@$REMOTE_HOST << "EOF" 
 cd /capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_climate/output/lm_f/1h_2D
 
 # List all files, filter only those from the year 2011, and sort them
@@ -82,7 +82,7 @@ for date in "${sorted_dates[@]}"; do
     # Increment shift
     shift=$(( (shift + 1) % 24 ))
 done
-EOF
+EOF > ~/selected_files.txt
 
 # Step 2: Copy the selected files from the remote server
 rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:~/selected_files.txt $FILE_LIST
