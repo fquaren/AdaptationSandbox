@@ -24,7 +24,7 @@ REMOTE_PATH="/capstor/store/cscs/c2sm/scclim/climate_simulations/RUN_2km_cosmo6_
 LOCAL_PATH="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/T_2M"
 
 # Temporary file to store the list of selected files
-TMP_FILE_LIST="selected_files.txt"
+TMP_FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files.txt"
 
 # Step 1: SSH into the remote server and find the selected files
 ssh $REMOTE_USER@$REMOTE_HOST << 'EOF' > selected_files.txt
@@ -86,7 +86,7 @@ rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:$RE
 # Step 3: Copy the selected NetCDF files from remote to local
 mkdir -p $LOCAL_PATH
 # rsync -av --files-from=$TMP_FILE_LIST $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
-rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
+rsync -avz -e --files-from=$TMP_FILE_LIST "ssh -J $REMOTE_USER@$FRONTEND_HOST" $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/ $LOCAL_PATH/
 
 # Step 4: Extract the "T_2M" variable and save as new files
 cd $LOCAL_PATH
