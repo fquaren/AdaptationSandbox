@@ -12,7 +12,7 @@ def compute_thresholds_for_subdir(subdir, input_dir, dem_dir):
     elevation_values = []
 
     subdir_path = os.path.join(input_dir, subdir)
-    dem_file = f"dem_{subdir}.nc"
+    dem_file = f"{subdir}_dem.nc"
     dem_path = os.path.join(dem_dir, dem_file)
 
     if not os.path.isdir(subdir_path):
@@ -55,7 +55,7 @@ def compute_thresholds(input_dir, dem_dir, num_workers=None):
         humidity_values.extend(res[2])
 
     # Compute median (or mean) thresholds
-    threshold_elev = np.median(elevation_values)  # Use np.mean(elevation_values) for mean
+    threshold_elev = np.median(elevation_values)
     threshold_temp = np.median(temperature_values)
     threshold_hum = np.median(humidity_values)
 
@@ -98,7 +98,7 @@ def process_file(args):
     cluster = classify_cluster(elevation, temperature, humidity, thresholds)
     print(f"File {os.path.basename(file_path)} (in {subdir}) classified into cluster {cluster}")
 
-    # Move file to the corresponding cluster folder
+    # Copy file to the corresponding cluster folder
     dest_path = os.path.join(output_dir, f'cluster_{cluster}', os.path.basename(file_path))
     shutil.copy(file_path, dest_path)
     print(f"Copied {os.path.basename(file_path)} to cluster_{cluster}")
@@ -121,7 +121,7 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, nu
             continue
 
         # Corresponding DEM file
-        dem_file = f"dem_{subdir}.nc"
+        dem_file = f"{subdir}_dem.nc"
         dem_path = os.path.join(dem_dir, dem_file)
 
         # Get all NetCDF files in the subdirectory

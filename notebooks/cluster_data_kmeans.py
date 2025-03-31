@@ -12,10 +12,10 @@ def collect_data_for_subdir(subdir, input_dir, dem_dir):
     temperature_values = []
     humidity_values = []
     elevation_values = []
-    pressure_values = []
+    # pressure_values = []
 
     subdir_path = os.path.join(input_dir, subdir)
-    dem_file = f"dem_{subdir}.nc"
+    dem_file = f"{subdir}_dem.nc"
     dem_path = os.path.join(dem_dir, dem_file)
 
     if not os.path.isdir(subdir_path):
@@ -41,19 +41,19 @@ def collect_data_for_subdir(subdir, input_dir, dem_dir):
             with xr.open_dataset(file) as ds:
                 temp_values = ds['T_2M'].values.flatten()  # Flatten to ensure 1D array
                 hum_values = ds['RELHUM_2M'].values.flatten()
-                sp_values = ds['PS'].values.flatten()
+                # sp_values = ds['PS'].values.flatten()
 
                 # Repeat elevation for each time step
                 elev_values = np.full_like(temp_values, mean_elevation)
 
                 temperature_values.extend(temp_values)
                 humidity_values.extend(hum_values)
-                pressure_values.extend(sp_values)
+                # pressure_values.extend(sp_values)
                 elevation_values.extend(elev_values)
         except Exception as e:
             print(f"Error processing file {file}: {e}")
 
-    return elevation_values, temperature_values, humidity_values, pressure_values
+    return elevation_values, temperature_values, humidity_values#, pressure_values
 
 
 def collect_data(input_dir, dem_dir, num_workers=None):
@@ -72,48 +72,48 @@ def collect_data(input_dir, dem_dir, num_workers=None):
         results = list(tqdm(pool.starmap(collect_data_for_subdir, subdir_args), total=len(subdir_args)))
 
     # Combine results
-    elevation_values, temperature_values, humidity_values, pressure_values = zip(*results)
+    elevation_values, temperature_values, humidity_values = zip(*results) #, pressure_values 
 
     # Flatten lists
     elevation_values = np.concatenate(elevation_values)
     temperature_values = np.concatenate(temperature_values)
     humidity_values = np.concatenate(humidity_values)
-    pressure_values = np.concatenate(pressure_values)
-    assert elevation_values.shape == temperature_values.shape == humidity_values.shape == pressure_values.shape, "Data shapes do not match."
+    # pressure_values = np.concatenate(pressure_values)
+    assert elevation_values.shape == temperature_values.shape == humidity_values.shape, "Data shapes do not match." # == pressure_values.shape, 
 
     print(f"Collected {len(elevation_values)} samples for clustering.")
 
-    return elevation_values, temperature_values, humidity_values, pressure_values
+    return elevation_values, temperature_values, humidity_values#, pressure_values
 
 
 def apply_kmeans_clustering(elevation_values, temperature_values, humidity_values, pressure_values, max_clusters=10):
     """Apply KMeans clustering to the data using the elbow method to determine optimal clusters."""
     # Ensure all arrays have the same length
-    assert elevation_values.shape == temperature_values.shape == humidity_values.shape == pressure_values.shape, "Data shapes do not match."
+    assert elevation_values.shape == temperature_values.shape == humidity_values.shape, "Data shapes do not match."# == pressure_values.shape, 
 
     # Stack the values into a single matrix for clustering
-    data = np.stack([elevation_values, temperature_values, humidity_values, pressure_values], axis=1)
+    data = np.stack([elevation_values, temperature_values, humidity_values], axis=1) # pressure_values
 
     # # Calculate inertia for different numbers of clusters
-    # inertias = []
-    # for n_clusters in range(1, max_clusters + 1):
-    #     kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    #     kmeans.fit(data)
-    #     inertias.append(kmeans.inertia_)
+    inertias = []
+    for n_clusters in range(1, max_clusters + 1):
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        kmeans.fit(data)
+        inertias.append(kmeans.inertia_)
 
     # # Plot the inertia vs. number of clusters to find the elbow
-    # plt.figure(figsize=(8, 6))
-    # plt.plot(range(1, max_clusters + 1), inertias, marker='o')
-    # plt.title("Elbow Method for Optimal Clusters")
-    # plt.xlabel("Number of Clusters")
-    # plt.ylabel("Inertia")
-    # plt.grid(True)
-    # plt.savefig('elbow_method.png')
-    # plt.show()
+    plt.figure(figsize=(8, 6))
+    plt.plot(range(1, max_clusters + 1), inertias, marker='o')
+    plt.title("Elbow Method for Optimal Clusters")
+    plt.xlabel("Number of Clusters")
+    plt.ylabel("Inertia")
+    plt.grid(True)
+    plt.savefig('elbow_method_new_dataset.png')
+    plt.show()
 
     # Choose the optimal number of clusters (elbow point)
-    # optimal_clusters = np.argmin(np.diff(inertias)) + 2  # Plus 2 due to diff
-    optimal_clusters = 5
+    optimal_clusters = np.argmin(np.diff(inertias)) + 2  # Plus 2 due to diff
+    # optimal_clusters = 5
     print(f"Optimal number of clusters: {optimal_clusters}")
 
     # Perform KMeans with the optimal number of clusters
@@ -144,13 +144,13 @@ def process_file(args):
         with xr.open_dataset(file_path) as ds:
             temperature = ds['T_2M'].values.mean()
             humidity = ds['RELHUM_2M'].values.mean()
-            pressure = ds['PS'].values.mean()
+            # pressure = ds['PS'].values.mean()
     except Exception as e:
         print(f"Error reading NetCDF file {file_path}: {e}")
         return
 
     # Prepare the data point
-    data_point = np.array([elevation, temperature, humidity, pressure]).reshape(1, -1)
+    data_point = np.array([elevation, temperature, humidity]).reshape(1, -1) # pressure
 
     # Predict the cluster label using the KMeans model
     cluster_label = kmeans_model.predict(data_point)[0]
@@ -182,7 +182,7 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, kmeans_model, 
             continue
 
         # Corresponding DEM file
-        dem_file = f"dem_{subdir}.nc"
+        dem_file = f"{subdir}_dem.nc"
         dem_path = os.path.join(dem_dir, dem_file)
 
         # Get all NetCDF files in the subdirectory
@@ -197,18 +197,23 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, kmeans_model, 
     with multiprocessing.Pool(processes=num_workers) as pool:
         pool.map(process_file, file_list)
 
-# Example usage
+
 if __name__ == "__main__":
-    input_directory = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_gridded"
-    output_directory = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_kmeans"
-    dem_directory = "/Users/fquareng/data/dem_squares"
+    # input_directory = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_gridded"
+    # output_directory = "/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_kmeans"
+    # dem_directory = "/Users/fquareng/data/dem_squares"
+    data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+    # data_dir = "/Users/fquareng/data"
+    input_directory = os.path.join(data_dir, "DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded")
+    output_directory = os.path.join(data_dir, "DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold")
+    dem_directory =  os.path.join(data_dir, "dem_squares")
 
     print("Collecting data...")
-    elevation_values, temperature_values, humidity_values, pressure_values = collect_data(input_dir=input_directory, dem_dir=dem_directory)
+    elevation_values, temperature_values, humidity_values = collect_data(input_dir=input_directory, dem_dir=dem_directory) #pressure_values
 
     # Apply KMeans clustering with elbow method to determine optimal clusters
     print("Applying KMeans clustering...")
-    kmeans_model, num_clusters = apply_kmeans_clustering(elevation_values, temperature_values, humidity_values, pressure_values, max_clusters=10)
+    kmeans_model, num_clusters = apply_kmeans_clustering(elevation_values, temperature_values, humidity_values, max_clusters=10) #pressure_values
 
     # Process the NetCDF files and classify them into the KMeans clusters
     process_netcdf_files_parallel(input_directory, dem_directory, output_directory, kmeans_model, num_clusters)
