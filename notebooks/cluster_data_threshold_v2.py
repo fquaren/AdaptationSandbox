@@ -5,6 +5,7 @@ import multiprocessing
 import numpy as np
 from tqdm import tqdm
 
+
 def compute_thresholds_for_subdir(subdir, input_dir, dem_dir):
     """Compute the elevation, temperature, and humidity values for a given subdirectory."""
     temperature_values = []
@@ -35,6 +36,7 @@ def compute_thresholds_for_subdir(subdir, input_dir, dem_dir):
 
     return elevation_values, temperature_values, humidity_values
 
+
 def compute_thresholds(input_dir, dem_dir, num_workers=None):
     """Compute the median (or mean) threshold for elevation, temperature, and humidity in parallel."""
     # Prepare the list of subdirectories to process
@@ -54,25 +56,44 @@ def compute_thresholds(input_dir, dem_dir, num_workers=None):
         temperature_values.extend(res[1])
         humidity_values.extend(res[2])
 
-    # Compute median (or mean) thresholds
-    threshold_elev = np.median(elevation_values)
+    # Compute thresholds
+    threshold_elev_33 = np.percentile(elevation_values, 33)
+    threshold_elev_67 = np.percentile(elevation_values, 67)
     threshold_temp = np.median(temperature_values)
     threshold_hum = np.median(humidity_values)
 
-    print(f"Computed Thresholds: Elevation={threshold_elev}, Temperature={threshold_temp}, Humidity={threshold_hum}")
-    return threshold_elev, threshold_temp, threshold_hum
+    print(f"Computed Thresholds:\n"
+          f"Elevation 33rd Percentile: {threshold_elev_33}\n"
+          f"Elevation 67th Percentile: {threshold_elev_67}\n"
+          f"Temperature Median: {threshold_temp}\n"
+          f"Humidity Median: {threshold_hum}")
+
+    return threshold_elev_33, threshold_elev_67, threshold_temp, threshold_hum
+
 
 def classify_cluster(elevation, temperature, humidity, thresholds):
-    """Classify the file into one of 8 clusters based on threshold conditions."""
-    threshold_elev, threshold_temp, threshold_hum = thresholds
+    """Classify into 12 clusters using two elevation thresholds."""
+    threshold_elev_33, threshold_elev_67, threshold_temp, threshold_hum = thresholds
     cluster = 0
-    if elevation > threshold_elev:
-        cluster |= 1  # Set bit 1
+
+    # Elevation classification (3 levels)
+    if elevation > threshold_elev_67:
+        cluster |= 0  # High elevation (0xxxx)
+    elif elevation > threshold_elev_33:
+        cluster |= 4  # Medium elevation (1xxxx)
+    else:
+        cluster |= 8  # Low elevation (10xxx)
+
+    # Temperature classification (2 levels)
     if temperature > threshold_temp:
-        cluster |= 2  # Set bit 2
+        cluster |= 2  # Warmer (x1xx)
+
+    # Humidity classification (2 levels)
     if humidity > threshold_hum:
-        cluster |= 4  # Set bit 3
+        cluster |= 1  # More humid (xx1x)
+
     return cluster
+
 
 def process_file(args):
     """Process a single NetCDF file: classify it and move it to the correct cluster."""
@@ -143,7 +164,7 @@ if __name__ == "__main__":
     # input_directory = os.path.join(data_dir, "DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded")
     input_directory = os.path.join(data_dir, "8h-PS-RELHUM_2M-T_2M_cropped_gridded")
     # output_directory = os.path.join(data_dir, "DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold")
-    output_directory = os.path.join(data_dir, "8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold")
+    output_directory = os.path.join(data_dir, "8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
     dem_directory =  os.path.join(data_dir, "dem_squares")
 
     print("Computing thresholds...")
