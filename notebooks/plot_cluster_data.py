@@ -231,9 +231,9 @@ def plot_all(input_dir, dem_dir, figures_directory):
 if __name__ == "__main__":
     cluster_method = "threshold" # "threshold", "kmeans", "hierarchical"
     # input_directory = f"/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_{cluster_method}"
-    input_directory = f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_{cluster_method}_v2"
+    input_directory = f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_{cluster_method}_12"
     dem_directory = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/dem_squares"
-    figures_directory = f"/scratch/fquareng/figures/new_dataset_{cluster_method}"
+    figures_directory = f"/scratch/fquareng/figures/new_dataset_{cluster_method}_12"
     
     print("Plotting cluster data for method:", cluster_method)
     
