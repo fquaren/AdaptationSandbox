@@ -12,38 +12,63 @@ import matplotlib.pyplot as plt
 import argparse
 
 
-class SingleVariableDataset(Dataset):
-    def __init__(self, variable, input_files, elev_dir, target_files):
-        """
-        Args:
-            input_files (list): Paths to low-resolution variable (temperature) NetCDF files.
-            elev_dir (str): Directory containing elevation NetCDF files named as "A_B_something.nc".
-            target_files (list): Paths to corresponding high-resolution target NetCDF files.
-        """
+def compute_equivalent_potential_temperature(T, RH, P_surf):
+    """Compute equivalent potential temperature θ_e (K) for GPU-accelerated tensors."""
+    L_v = 2.5e6  # Latent heat of vaporization (J/kg)
+    cp = 1005    # Specific heat of dry air (J/kg/K)
+    epsilon = 0.622  # Ratio of molecular weights of water vapor to dry air
+
+    # Compute saturation vapor pressure (hPa) using Tetens' formula
+    e_s = 6.112 * torch.exp((17.67 * T) / (T + 243.5))
+    e = RH * e_s  # Actual vapor pressure (hPa)
+    
+    # Mixing ratio (kg/kg)
+    w = epsilon * (e / (P_surf - e))
+    
+    # Compute potential temperature θ
+    theta = T * (1000 / P_surf) ** 0.286
+    
+    # Compute equivalent potential temperature θ_e
+    theta_e = theta * torch.exp((L_v * w) / (cp * T))
+    
+    return theta_e
+
+class NormalizeTransform:
+    def __call__(self, temp, elev):
+        temp = (temp - temp.mean()) / temp.std()
+        elev = (elev - elev.mean()) / elev.std()
+        return temp, elev
+
+class SingleVariableDataset_v2(Dataset):
+    def __init__(self, variable, input_files, target_files, elev_dir, transform=None):
         self.variable = variable
         self.input_files = input_files
         self.target_files = target_files
         self.elev_dir = elev_dir
-
-        # Preload the mapping of elevation files for faster access
         self.elev_files = self._map_elevation_files()
+        self.transform = transform
 
     def _extract_numbers(self, filename):
-        """Extracts A and B from a filename like '3_6_lffd20101208160000.nz'."""
-        match = re.match(r"(\d{1,2})_(\d{1,2})_", os.path.basename(filename))  # Matches 0-11 correctly
+        match = re.match(r"(\d{1,2})_(\d{1,2})_lffd(\d{4})(\d{2})", os.path.basename(filename))
+        if match:
+            A, B, year, month = int(match.group(1)), int(match.group(2)), int(match.group(3)), int(match.group(4))
+            return A, B, year, month
+        raise ValueError(f"Filename {filename} does not match expected pattern A_B_lffdYYYYMM*.nc")
+    
+    def _extract_numbers_from_dem(self, filename):
+        match = re.match(r"(\d{1,2})_(\d{1,2})_", os.path.basename(filename))
         if match:
             A, B = int(match.group(1)), int(match.group(2))
-            if 0 <= A <= 11 and 0 <= B <= 11:
-                return A, B
-        raise ValueError(f"Filename {filename} does not match expected pattern A_B_*.nz")
-
+            return A, B
+        raise ValueError(f"Filename {filename} does not match expected pattern A_B_lffdYYYYMM*.nc")
+    
     def _map_elevation_files(self):
         """Creates a mapping of (A, B) -> elevation file path, ensuring exact matches."""
         elev_files = {}
         for file in os.listdir(self.elev_dir):
             if file.endswith(".nc"):
                 try:
-                    A, B = self._extract_numbers(file)
+                    A, B = self._extract_numbers_from_dem(file)
                     elev_files[(A, B)] = os.path.join(self.elev_dir, file)
                 except ValueError:
                     continue  # Ignore files that don't match the pattern
@@ -53,12 +78,9 @@ class SingleVariableDataset(Dataset):
         return len(self.input_files)
 
     def __getitem__(self, idx):
-        """Loads variable input, elevation, and corresponding high-resolution target"""
         input_file = self.input_files[idx]
         target_file = self.target_files[idx]
-
-        # Extract A and B from input filename
-        A, B = self._extract_numbers(input_file)
+        A, B, _, _ = self._extract_numbers(input_file)
 
         # Ensure the correct elevation file exists
         if (A, B) not in self.elev_files:
@@ -66,146 +88,121 @@ class SingleVariableDataset(Dataset):
 
         elev_file = self.elev_files[(A, B)]
 
-        # Load variable data
         with xr.open_dataset(input_file) as ds:
-            input = torch.tensor(ds[self.variable].sel(time=ds[self.variable].time[0]).values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
+            input_data = torch.tensor(ds[self.variable].isel(time=0).values, dtype=torch.float32).unsqueeze(0)
 
-        # Load high-resolution target (same variable as input)
         with xr.open_dataset(target_file) as ds:
-            target = torch.tensor(ds[self.variable].sel(time=ds[self.variable].time[0]).values, dtype=torch.float32).unsqueeze(0)  # [1, H_target, W_target]
+            target_data = torch.tensor(ds[self.variable].isel(time=0).values, dtype=torch.float32).unsqueeze(0)
 
-        # Load the correct elevation data
         with xr.open_dataset(elev_file) as ds:
-            elevation_data = torch.tensor(ds["HSURF"].values, dtype=torch.float32).unsqueeze(0)  # [1, H, W]
+            elevation_data = torch.tensor(ds["HSURF"].values, dtype=torch.float32).unsqueeze(0)
 
-        return input, elevation_data, target
+        if self.transform == "normalize":
+            transform = NormalizeTransform()
+            # Normalize the data
+            input_data, elevation_data = transform(input_data, elevation_data)
+            # Ensure the target data is normalized
+            target_data = (target_data - target_data.mean()) / target_data.std()
+        if self.transform == "theta_e":
+            # Load the necessary data
+            with xr.open_dataset(input_file) as ds:
+                input_RH = torch.tensor(ds["RELHUM_2M"].isel(time=0).values, dtype=torch.float32).unsqueeze(0)
+                input_P_surf = torch.tensor(ds["PS"].isel(time=0).values, dtype=torch.float32).unsqueeze(0)
+            # Apply transfromation
+            input_data = compute_equivalent_potential_temperature(input_data, input_RH, input_P_surf)
+            with xr.open_dataset(target_file) as ds:
+                target_RH = torch.tensor(ds["RELHUM_2M"].isel(time=0).values, dtype=torch.float32).unsqueeze(0)
+                target_P_surf = torch.tensor(ds["PS"].isel(time=0).values, dtype=torch.float32).unsqueeze(0)
+            # Apply transfromation
+            target_data = compute_equivalent_potential_temperature(target_data, target_RH, target_P_surf)
+        
+        return input_data, elevation_data, target_data
 
 
-def split_dataset(input_files, target_files):
+def get_file_splits(input_dir, target_dir, excluded_cluster):
     """
-    Splits input and target files into training, validation, and test sets.
+    Get file splits for training, validation, and testing datasets.
+    Args:
+        input_dir (str): Directory containing input files.
+        target_dir (str): Directory containing target files.
+        excluded_cluster (str): Cluster to be excluded from training.
+    Returns:
+        dict: Dictionary containing file splits for training, validation, and testing datasets.
     """
     train_inputs, val_inputs, test_inputs = [], [], []
     train_targets, val_targets, test_targets = [], [], []
 
-    pattern = re.compile(r"(\d{1,2})_(\d{1,2})_lffd(\d{4})(\d{2})(\d{2})\d{6}")
-
-    for input_file, target_file in zip(input_files, target_files):
-        # Check input file and target file contain the same date
-        assert pattern.search(input_file).group(3,4,5) == pattern.search(target_file).group(3,4,5), "Input and target files must match."
-
-        pattern.search(input_file).group()
-        match = pattern.search(input_file)
-        if match:
-            day = int(match.group(5))
-            if day <= 21:
-                train_inputs.append(input_file)
-                train_targets.append(target_file)
-            elif 22 <= day < 25:
-                test_inputs.append(input_file)
-                test_targets.append(target_file)
-            elif day >= 25:
-                val_inputs.append(input_file)
-                val_targets.append(target_file)
-
-    return (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets)
-
-
-def split_dataset_3h(input_files, target_files):
-    """
-    Splits input and target files into training, validation, and test sets.
-    Only selects files where the hour is a multiple of 3 (every 3 hours).
-    
-    Args:
-        input_files (list of str): List of input file paths.
-        target_files (list of str): List of corresponding target file paths.
-    
-    Returns:
-        tuple: (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets)
-    """
-    train_inputs, val_inputs, test_inputs = [], [], []
-    train_targets, val_targets, test_targets = [], [], []
-
-    pattern = re.compile(r"(\d{1,2})_(\d{1,2})_lffd(\d{4})(\d{2})(\d{2})(\d{2})\d{4}")
-
-    for input_file, target_file in zip(input_files, target_files):
-        match_input = pattern.search(input_file)
-        match_target = pattern.search(target_file)
-
-        if match_input and match_target:
-            # Extract day and hour
-            day = int(match_input.group(5))   # Group 5 is the day (DD)
-            hour = int(match_input.group(6))  # Group 6 is the hour (hh)
-
-            # Ensure input and target files correspond to the same date
-            assert match_input.group(3, 4, 5, 6) == match_target.group(3, 4, 5, 6), \
-                "Input and target files must match."
-
-            # Only select data points at 3-hour intervals
-            if hour % 3 == 0:
-                if day <= 21:
-                    train_inputs.append(input_file)
-                    train_targets.append(target_file)
-                elif 22 <= day < 25:
-                    test_inputs.append(input_file)
-                    test_targets.append(target_file)
-                elif day >= 25:
-                    val_inputs.append(input_file)
-                    val_targets.append(target_file)
-
-    return (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets)
-
-
-def get_dataloaders(variable, input_dir, target_dir, elev_file, batch_size=16):
-    input_files = sorted([os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.endswith(".nz")])
-    target_files = sorted([os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.endswith(".nz")])
-
-    # Check input and target files contain the same number of samples
-    assert len(input_files) == len(target_files), "Number of input and target files must match."
-
-    (train_inputs, train_targets), (val_inputs, val_targets), (test_inputs, test_targets) = split_dataset_3h(input_files, target_files)
-
-    train_dataset = SingleVariableDataset(variable, train_inputs, elev_file, train_targets)
-    val_dataset = SingleVariableDataset(variable, val_inputs, elev_file, val_targets)
-    test_dataset = SingleVariableDataset(variable, test_inputs, elev_file, test_targets)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    return train_loader, val_loader, test_loader
-
-
-def get_cluster_dataloaders(variable, input_path, target_path, dem_dir, batch_size=4):
-    """
-    Load train and validation DataLoaders for all clusters.
-
-    Args:
-        variable (str): Variable name for dataset.
-        data_root (str): Root directory containing cluster subdirectories.
-        batch_size (int): Batch size for DataLoader.
-
-    Returns:
-        train_loaders (dict): Dictionary of cluster train DataLoaders.
-        val_loaders (dict): Dictionary of cluster validation DataLoaders.
-        test_loaders (dict): Dictionary of cluster testing DataLoaders.
-    """
-    train_loaders, val_loaders, test_loaders = {}, {}, {}
-    for cluster_name in os.listdir(input_path):
-        input_dir = os.path.join(input_path, cluster_name)
-        target_dir = os.path.join(target_path, cluster_name)
-        # Ensure directories exist
-        if not (os.path.isdir(input_dir) and os.path.isdir(target_dir)):
+    for cluster in sorted(os.listdir(input_dir)):
+        input_path = os.path.join(input_dir, cluster)
+        target_path = os.path.join(target_dir, cluster)
+        if not os.path.isdir(input_path) or not os.path.isdir(target_path):
             continue
 
-        # Load train and validation data
-        train_loader, val_loader, test_loader = get_dataloaders(variable, input_dir, target_dir, dem_dir, batch_size)
+        all_input_files = sorted([f for f in os.listdir(input_path) if f.endswith(".nz")])
+        all_target_files = sorted([f for f in os.listdir(target_path) if f.endswith(".nz")])
+        pattern = re.compile(r"(\d{1,2})_(\d{1,2})_lffd(\d{4})(\d{2})(\d{2})\d{6}")
+        
+        for input_file, target_file in zip(all_input_files, all_target_files):
+            assert pattern.search(input_file).group(3,4,5) == pattern.search(target_file).group(3,4,5), "Input and target files must match."
+            try:
+                _, _, year, month = SingleVariableDataset_v2._extract_numbers(None, input_file)
+            except ValueError:
+                continue
 
-        train_loaders[cluster_name] = train_loader
-        val_loaders[cluster_name] = val_loader
-        test_loaders[cluster_name] = test_loader
+            input_file_path = os.path.join(input_path, input_file)
+            target_file_path = os.path.join(target_path, target_file)
 
-    return train_loaders, val_loaders, test_loaders
+            if cluster == excluded_cluster:
+                if year == 2017 and month in [3, 6, 9, 12]:
+                    val_inputs.append(input_file_path)
+                    val_targets.append(target_file_path)
+            elif year == 2019 and month % 2 == 1:
+                train_inputs.append(input_file_path)
+                train_targets.append(target_file_path)
+            elif year == 2015 and month % 2 == 1:
+                test_inputs.append(input_file_path)
+                test_targets.append(target_file_path)
+
+    return {
+        "train": (train_inputs, train_targets),
+        "val": (val_inputs, val_targets),
+        "test": (test_inputs, test_targets),
+    }
+
+
+def get_dataloaders(input_dir, target_dir, elev_dir, variable, batch_size=8, num_workers=1, transform=None):
+    """
+    Create dataloaders for training, validation, and testing datasets.
+    Args:
+        input_dir (str): Directory containing input files.
+        target_dir (str): Directory containing target files.
+        elev_dir (str): Directory containing elevation files.
+        variable (str): Variable name to load from the dataset.
+        batch_size (int): Batch size for dataloaders.
+        num_workers (int): Number of workers for dataloaders.
+        transform: Transformations to apply to the data.
+    Returns:
+        dict: Dictionary containing dataloaders for each cluster.
+    """
+    cluster_names = sorted([c for c in os.listdir(input_dir) if os.path.isdir(os.path.join(input_dir, c))])
+    dataloaders = {}
+
+    for excluded_cluster in cluster_names:
+        print(f"Excluding cluster: {excluded_cluster}")
+
+        file_splits = get_file_splits(input_dir, target_dir, excluded_cluster)
+
+        train_dataset = SingleVariableDataset_v2(variable, *file_splits["train"], elev_dir, transform)
+        val_dataset = SingleVariableDataset_v2(variable, *file_splits["val"], elev_dir, transform)
+        test_dataset = SingleVariableDataset_v2(variable, *file_splits["test"], elev_dir, transform)
+
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
+        val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+        test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+
+        dataloaders[excluded_cluster] = {"train": train_loader, "val": val_loader, "test": test_loader}
+
+    return dataloaders
 
 
 def upscale_array_spline(arr: np.ndarray, new_size=(128, 128), kx=1, ky=1) -> np.ndarray:
@@ -261,7 +258,6 @@ def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, s
     
     criterion = criterion
     all_test_losses = []
-    # all_predictions, all_targets = [], []
     
     # Iterate through each cluster
     for cluster_name, test_loader in test_loaders.items():
@@ -288,12 +284,8 @@ def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, s
 
         # Save test losses and predictions for the current cluster
         np.save(os.path.join(save_path, f"{cluster_name}_test_losses.npy"), test_losses)
-        # np.save(os.path.join(save_path, f"{cluster_name}_predictions.npy"), predictions) 
-        # TODO save also filename
         
         all_test_losses.extend(test_losses)  # Accumulate all cluster test losses
-        # all_predictions.extend(predictions)  # Accumulate all cluster predictions
-        # all_targets.extend(targets)  # Accumulate all cluster targets
 
         # Get top 5 and bottom 5 examples based on loss
         top_5_idx = test_losses.argsort()[-5:][::-1]  # Highest loss
@@ -358,21 +350,24 @@ def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, s
 
 data_path = "/Users/fquareng/data/"
 dem_path = "dem_squares"
+input_path = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12_blurred")
+target_path = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--exp_name", type=str, default=None, help="Path of model to evaluate")
 parser.add_argument("--method", type=str, default=None, help="Interpolation model")
 args = parser.parse_args()
-exp_path = os.path.join("/Users/fquareng/experiments/", args.exp_name)
-os.makedirs(exp_path, exist_ok=True)
+exp_path = args.exp_name #os.path.join("/Users/fquareng/experiments/", args.exp_name)
+# os.makedirs(exp_path, exist_ok=True)
 
-_, _, test_loaders = get_cluster_dataloaders(
+dataloaders = get_dataloaders(
     variable="T_2M",
-    input_path=os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold_blurred"),
-    target_path=os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold"),
-    dem_dir=os.path.join(data_path, dem_path),
+    input_dir=input_path,
+    target_dir=target_path,
+    elev_dir=os.path.join(data_path, dem_path),
     batch_size=1
 )
+test_loaders = {k: v["test"] for k, v in dataloaders.items()}
 
 mean_test_loss = evaluate_and_plot_interpolation(
     model=args.method,
