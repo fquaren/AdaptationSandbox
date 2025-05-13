@@ -4,7 +4,7 @@
 #SBATCH --mail-user filippo.quarenghi@unil.ch
 
 #SBATCH --chdir /scratch/fquareng/
-#SBATCH --job-name cscs
+#SBATCH --job-name 19
 #SBATCH --output outputs/%j
 #SBATCH --error job_errors/%j
 
@@ -20,7 +20,7 @@ module load cdo
 LOCAL_PATH="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/1d-PS-RELHUM_2M-T_2M"
 
 # File to store the list of selected files
-FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files_2015.txt"
+FILE_LIST="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/selected_files_2019.txt"
 
 cd $LOCAL_PATH
 while read file; do

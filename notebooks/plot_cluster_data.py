@@ -10,6 +10,28 @@ import seaborn as sns
 import pandas as pd
 
 
+def compute_equivalent_potential_temperature(T, RH, P_surf):
+    """Compute equivalent potential temperature θ_e (K) for GPU-accelerated tensors."""
+    L_v = 2.5e6  # Latent heat of vaporization (J/kg)
+    cp = 1005    # Specific heat of dry air (J/kg/K)
+    epsilon = 0.622  # Ratio of molecular weights of water vapor to dry air
+
+    # Compute saturation vapor pressure (hPa) using Tetens' formula
+    e_s = 6.112 * np.exp((17.67 * T) / (T + 243.5))
+    e = RH * e_s  # Actual vapor pressure (hPa)
+    
+    # Mixing ratio (kg/kg)
+    w = epsilon * (e / (P_surf - e))
+    
+    # Compute potential temperature θ
+    theta = T * (1000 / P_surf) ** 0.286
+    
+    # Compute equivalent potential temperature θ_e
+    theta_e = theta * np.exp((L_v * w) / (cp * T))
+    
+    return theta_e
+ 
+
 def collect_data_for_cluster(cluster_index, cluster_dir, dem_dir):
     """Collect temperature, humidity, pressure, and elevation data for all files in a cluster's directory."""
     temperature_values = []
@@ -58,10 +80,11 @@ def collect_data_for_all_clusters(input_dir, dem_dir, num_clusters):
         results = list(tqdm(pool.starmap(collect_data_for_cluster, cluster_dirs), total=num_clusters))
     
     # Prepare the data in a dictionary format
-    cluster_data = {i: {'T_2M': [], 'RELHUM_2M': [], 'PS': [], 'HSURF': []} for i in range(num_clusters)}
+    cluster_data = {i: {'T_2M': [], 'Theta_e':[], 'RELHUM_2M': [], 'PS': [], 'HSURF': []} for i in range(num_clusters)}
     
     for cluster_index, temp_values, humidity_values, pressure_values, elevation_values in results:
         cluster_data[cluster_index]['T_2M'] = temp_values
+        cluster_data[cluster_index]['Theta_e'] = compute_equivalent_potential_temperature(temp_values, humidity_values, pressure_values)
         cluster_data[cluster_index]['RELHUM_2M'] = humidity_values
         cluster_data[cluster_index]['PS'] = pressure_values
         cluster_data[cluster_index]['HSURF'] = elevation_values
@@ -231,7 +254,7 @@ def plot_all(input_dir, dem_dir, figures_directory):
 if __name__ == "__main__":
     cluster_method = "threshold" # "threshold", "kmeans", "hierarchical"
     # input_directory = f"/Users/fquareng/data/1h_2D_sel_cropped_blurred_x8_clustered_{cluster_method}"
-    input_directory = f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_{cluster_method}_12"
+    input_directory = f"/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_{cluster_method}_12"
     dem_directory = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/dem_squares"
     figures_directory = f"/scratch/fquareng/figures/new_dataset_{cluster_method}_12"
     

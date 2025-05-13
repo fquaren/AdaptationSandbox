@@ -124,11 +124,12 @@ def process_file(args):
     shutil.copy(file_path, dest_path)
     print(f"Copied {os.path.basename(file_path)} to cluster_{cluster}")
 
+
 def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, num_workers=1):
     """Process all NetCDF files in parallel using multiprocessing."""
     
     # Ensure cluster directories exist
-    for i in range(8):
+    for i in range(12):
         os.makedirs(os.path.join(output_dir, f'cluster_{i}'), exist_ok=True)
 
     # Create a list of files to process
@@ -157,14 +158,12 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, nu
     with multiprocessing.Pool(processes=num_workers) as pool:
         pool.map(process_file, file_list)
 
-# Example usage
+
 if __name__ == "__main__":
-    # data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
-    data_dir = "/Users/fquareng/data"
-    # input_directory = os.path.join(data_dir, "DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded")
-    input_directory = os.path.join(data_dir, "8h-PS-RELHUM_2M-T_2M_cropped_gridded")
-    # output_directory = os.path.join(data_dir, "DA/8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold")
-    output_directory = os.path.join(data_dir, "8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
+    data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
+    # data_dir = "/Users/fquareng/data"
+    input_directory = os.path.join(data_dir, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded")
+    output_directory = os.path.join(data_dir, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
     dem_directory =  os.path.join(data_dir, "dem_squares")
 
     print("Computing thresholds...")

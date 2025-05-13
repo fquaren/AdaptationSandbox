@@ -18,9 +18,9 @@
 module load nco
 
 # Directory containing input NetCDF files
-source_dir="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/8h-PS-RELHUM_2M-T_2M/"
+source_dir="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/1d-PS-RELHUM_2M-T_2M/"
 # Directory to store cropped files
-output_dir="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/8h-PS-RELHUM_2M-T_2M_cropped/"
+output_dir="/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/1d-PS-RELHUM_2M-T_2M_cropped/"
 
 # Function to process a single file
 process_file() {
