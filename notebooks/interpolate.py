@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import argparse
+import yaml
 
 
 def compute_equivalent_potential_temperature(T, RH, P_surf):
@@ -233,7 +234,7 @@ def upscale_array_spline(arr: np.ndarray, new_size=(128, 128), kx=1, ky=1) -> np
     return interpolator(y_new, x_new)
 
 
-def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, save=True):
+def evaluate_and_plot_interpolation(model, criterion, cluster_name, test_loader, save_path, save=True):
     """
     Evaluates the model on the test datasets from multiple clusters, computes test loss, and plots results.
     
@@ -242,7 +243,6 @@ def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, s
         config (dict): The configuration containing criterion and other settings.
         test_loaders (dict): A dictionary where keys are cluster names and values are DataLoader instances for testing.
         save_path (str): Directory to save the evaluation results.
-        device (str): Device to run the evaluation on ('cpu', 'cuda', etc.).
         save (bool): Whether to save the plots and losses.
     
     Returns:
@@ -257,108 +257,96 @@ def evaluate_and_plot_interpolation(model, criterion, test_loaders, save_path, s
         kx, ky = 3, 3
     
     criterion = criterion
-    all_test_losses = []
     
     # Iterate through each cluster
-    for cluster_name, test_loader in test_loaders.items():
-        print("Evaluating cluster", cluster_name)
-        test_losses = []
-        predictions, targets, elevations, inputs = [], [], [], []
-        
-        for temperature, elevation, target in tqdm(test_loader):
-            temperature = temperature.numpy()
-            output = upscale_array_spline(arr=temperature, kx=kx, ky=ky)
-            output = torch.from_numpy(output).unsqueeze(0).unsqueeze(0)
-            loss = criterion(output, target)
-            test_losses.append(loss)
-            predictions.append(output)
-            targets.append(target)
-            elevations.append(elevation)
-            inputs.append(temperature)
-        
-        test_losses = np.array(test_losses)
-        predictions = np.concatenate(predictions, axis=0)
-        targets = np.concatenate(targets, axis=0) 
-        elevations = np.concatenate(elevations, axis=0)
-        inputs = np.concatenate(inputs, axis=0)
-
-        # Save test losses and predictions for the current cluster
-        np.save(os.path.join(save_path, f"{cluster_name}_test_losses.npy"), test_losses)
-        
-        all_test_losses.extend(test_losses)  # Accumulate all cluster test losses
-
-        # Get top 5 and bottom 5 examples based on loss
-        top_5_idx = test_losses.argsort()[-5:][::-1]  # Highest loss
-        bottom_5_idx = test_losses.argsort()[:5]      # Lowest loss
-        
-        # Plot results for the current cluster
-        fig, axes = plt.subplots(5, 4, figsize=(10, 15))
-        plt.suptitle(f"WORST 5 - Mean Test Loss for {cluster_name}: {test_losses.mean():.4f}")
-        for i, idx in enumerate(top_5_idx):
-            for j, (data, cmap, title) in enumerate(zip(
-                [inputs[idx][0], predictions[idx][0], targets[idx][0], elevations[idx][0]], 
-                ['coolwarm', 'coolwarm', 'coolwarm', 'viridis'], 
-                [f"Input", f"Prediction (Loss: {test_losses[idx]:.4f})", 
-                f"Target", f"Elevation"])):
-                
-                # Display image
-                img = axes[i, j].imshow(data, cmap=cmap)
-                axes[i, j].set_title(title)
-                axes[i, j].axis("off")  # Hide axes
-                
-                # Add colorbar
-                cbar = fig.colorbar(img, ax=axes[i, j], fraction=0.046, pad=0.04)  
-                cbar.ax.tick_params(labelsize=8)  # Adjust tick size
-        plt.tight_layout()
-        if save:
-            plt.savefig(os.path.join(save_path, f"evaluation_results_worst_{cluster_name}.png"))
-        
-        fig, axes = plt.subplots(5, 4, figsize=(10, 15))
-        plt.suptitle(f"BEST 5 - Mean Test Loss for {cluster_name}: {test_losses.mean():.4f}")
-        for i, idx in enumerate(bottom_5_idx):
-            for j, (data, cmap, title) in enumerate(zip(
-                [inputs[idx][0], predictions[idx][0], targets[idx][0], elevations[idx][0]], 
-                ['coolwarm', 'coolwarm', 'coolwarm', 'viridis'], 
-                [f"Input", f"Prediction (Loss: {test_losses[idx]:.4f})", 
-                f"Target", f"Elevation"])):
-                
-                # Display image
-                img = axes[i, j].imshow(data, cmap=cmap)
-                axes[i, j].set_title(title)
-                axes[i, j].axis("off")  # Hide axes
-                
-                # Add colorbar
-                cbar = fig.colorbar(img, ax=axes[i, j], fraction=0.046, pad=0.04)  
-                cbar.ax.tick_params(labelsize=8)  # Adjust tick size
-
-        plt.tight_layout()
-        if save:
-            plt.savefig(os.path.join(save_path, f"evaluation_results_best_{cluster_name}.png"))
-
-    # Combine test losses across all clusters and compute the mean
-    all_test_losses = np.array(all_test_losses)
-    mean_test_loss = all_test_losses.mean()
-
-    # Save the combined test losses
-    np.save(os.path.join(save_path, "all_clusters_test_losses.npy"), all_test_losses)
+    test_losses = []
+    predictions, targets, elevations, inputs = [], [], [], []
     
-    # Final summary
-    print(f"Mean Test Loss across all clusters: {mean_test_loss:.4f}")
+    for temperature, elevation, target in tqdm(test_loader):
+        temperature = temperature.numpy()
+        output = upscale_array_spline(arr=temperature, kx=kx, ky=ky)
+        output = torch.from_numpy(output).unsqueeze(0).unsqueeze(0)
+        loss = criterion(output, target)
+        test_losses.append(loss)
+        predictions.append(output)
+        targets.append(target)
+        elevations.append(elevation)
+        inputs.append(temperature)
     
-    return mean_test_loss
+    test_losses = np.array(test_losses)
+    predictions = np.concatenate(predictions, axis=0)
+    targets = np.concatenate(targets, axis=0) 
+    elevations = np.concatenate(elevations, axis=0)
+    inputs = np.concatenate(inputs, axis=0)
+
+    # Save test losses and predictions for the current cluster
+    np.save(os.path.join(save_path, f"{cluster_name}_test_losses.npy"), test_losses)
+    
+    # Get top 5 and bottom 5 examples based on loss
+    top_5_idx = test_losses.argsort()[-5:][::-1]  # Highest loss
+    bottom_5_idx = test_losses.argsort()[:5]      # Lowest loss
+    
+    # Plot results for the current cluster
+    fig, axes = plt.subplots(5, 4, figsize=(10, 15))
+    plt.suptitle(f"WORST 5 - Mean Test Loss for {cluster_name}: {test_losses.mean():.4f}")
+    for i, idx in enumerate(top_5_idx):
+        for j, (data, cmap, title) in enumerate(zip(
+            [inputs[idx][0], predictions[idx][0], targets[idx][0], elevations[idx][0]], 
+            ['coolwarm', 'coolwarm', 'coolwarm', 'viridis'], 
+            [f"Input", f"Prediction (Loss: {test_losses[idx]:.4f})", 
+            f"Target", f"Elevation"])):
+            
+            # Display image
+            img = axes[i, j].imshow(data, cmap=cmap)
+            axes[i, j].set_title(title)
+            axes[i, j].axis("off")  # Hide axes
+            
+            # Add colorbar
+            cbar = fig.colorbar(img, ax=axes[i, j], fraction=0.046, pad=0.04)  
+            cbar.ax.tick_params(labelsize=8)  # Adjust tick size
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(save_path, f"evaluation_results_worst_{cluster_name}.png"))
+    
+    fig, axes = plt.subplots(5, 4, figsize=(10, 15))
+    plt.suptitle(f"BEST 5 - Mean Test Loss for {cluster_name}: {test_losses.mean():.4f}")
+    for i, idx in enumerate(bottom_5_idx):
+        for j, (data, cmap, title) in enumerate(zip(
+            [inputs[idx][0], predictions[idx][0], targets[idx][0], elevations[idx][0]], 
+            ['coolwarm', 'coolwarm', 'coolwarm', 'viridis'], 
+            [f"Input", f"Prediction (Loss: {test_losses[idx]:.4f})", 
+            f"Target", f"Elevation"])):
+            
+            # Display image
+            img = axes[i, j].imshow(data, cmap=cmap)
+            axes[i, j].set_title(title)
+            axes[i, j].axis("off")  # Hide axes
+            
+            # Add colorbar
+            cbar = fig.colorbar(img, ax=axes[i, j], fraction=0.046, pad=0.04)  
+            cbar.ax.tick_params(labelsize=8)  # Adjust tick size
+
+    plt.tight_layout()
+    if save:
+        plt.savefig(os.path.join(save_path, f"evaluation_results_best_{cluster_name}.png"))
+    plt.close("all")
+
+    return np.mean(test_losses)
 
 
-data_path = "/Users/fquareng/data/"
+data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
 dem_path = "dem_squares"
-input_path = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12_blurred")
-target_path = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
+input_path = os.path.join(data_path, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12_blurred")
+target_path = os.path.join(data_path, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
+exp_dir = "/scratch/fquareng/experiments/UNet_experiments_12"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--exp_name", type=str, default=None, help="Path of model to evaluate")
+# parser.add_argument("--exp_name", type=str, default=None, help="Path of model to evaluate")
 parser.add_argument("--method", type=str, default=None, help="Interpolation model")
 args = parser.parse_args()
-exp_path = args.exp_name #os.path.join("/Users/fquareng/experiments/", args.exp_name)
-# os.makedirs(exp_path, exist_ok=True)
+exp_name = args.method
+exp_path = os.path.join(exp_dir, exp_name)
+os.makedirs(exp_path, exist_ok=True)
 
 dataloaders = get_dataloaders(
     variable="T_2M",
@@ -367,12 +355,32 @@ dataloaders = get_dataloaders(
     elev_dir=os.path.join(data_path, dem_path),
     batch_size=1
 )
-test_loaders = {k: v["test"] for k, v in dataloaders.items()}
 
-mean_test_loss = evaluate_and_plot_interpolation(
-    model=args.method,
-    criterion=nn.MSELoss(),
-    test_loaders=test_loaders,
-    save_path=exp_path,
-    save=True,
-)
+all_test_losses = []
+for i, (excluded_cluster, loaders) in enumerate(dataloaders.items()):
+        
+    print(f"Evaluating cluster: {excluded_cluster}")
+
+    save_path = os.path.join(exp_path, excluded_cluster)
+    evaluation_path = os.path.join(save_path, "evaluation")
+    os.makedirs(evaluation_path, exist_ok=True)
+
+    # Evaluate model on the test dataset of the excluded cluster
+    for j, (cluster, loaders) in enumerate(dataloaders.items()):
+
+        if cluster == excluded_cluster:
+            # Get cluster test loader
+            test_loader = loaders["test"]
+            cluster_mean_test_loss = evaluate_and_plot_interpolation(
+                exp_name,
+                torch.nn.MSELoss(),
+                cluster,
+                test_loader,
+                save_path=evaluation_path,
+            )
+
+            # Combine test losses across all clusters and compute the mean
+            all_test_losses.append(cluster_mean_test_loss)
+
+# Save the combined test losses
+np.save(os.path.join(save_path, "all_clusters_test_losses.npy"), all_test_losses)

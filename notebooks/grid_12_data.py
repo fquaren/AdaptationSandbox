@@ -6,8 +6,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # Paths
 data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA/"
-data_dir = os.path.join(data_path, "8h-PS-RELHUM_2M-T_2M_cropped")
-output_dir = os.path.join(data_path, "8h-PS-RELHUM_2M-T_2M_cropped_gridded")
+data_dir = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped")
+output_dir = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded")
 csv_file = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/domains_clustering.csv"
 
 # Read the CSV file

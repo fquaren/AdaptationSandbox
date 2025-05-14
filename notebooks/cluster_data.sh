@@ -16,4 +16,4 @@
 #SBATCH --time 12:00:00
 
 source /users/fquareng/.bashrc
-micromamba run -n dwnscl python /work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/AdaptationSandbox/notebooks/cluster_data_threshold.py
+micromamba run -n dl python /work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/AdaptationSandbox/notebooks/cluster_data_threshold_v2.py

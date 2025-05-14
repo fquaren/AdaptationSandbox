@@ -20,4 +20,4 @@ export SINGULARITY_BINDPATH="/scratch,/dcsrsoft,/users,/work,/reference"
 singularity run --nv /dcsrsoft/singularity/containers/pytorch/pytorch-ngc-24.05-2.4.sif
 
 source /users/fquareng/.bashrc
-micromamba run -n dwnscl python /work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/AdaptationSandbox/notebooks/grid_12_data.py
+micromamba run -n dl python /work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/AdaptationSandbox/notebooks/grid_12_data.py

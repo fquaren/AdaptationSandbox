@@ -14,8 +14,8 @@ def process_file(file_info):
         # Define input & output paths
         # data_path = "/Users/fquareng/data"
         data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA"
-        input_dir = os.path.join(data_path, "8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold", cluster_dir)
-        output_dir = os.path.join(data_path, "8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_blurred", cluster_dir)
+        input_dir = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12", cluster_dir)
+        output_dir = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12_blurred", cluster_dir)
         os.makedirs(output_dir, exist_ok=True)
 
         input_path = os.path.join(input_dir, file)
@@ -66,7 +66,7 @@ def main():
     downsampling_factor = 8
     data_path = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data/DA"
     # data_path = "/Users/fquareng/data"
-    input_root_dir = os.path.join(data_path, "8h-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold")
+    input_root_dir = os.path.join(data_path, "1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
     # input_root_dir = os.path.join(data_path, "1h_2D_sel_cropped_gridded_clustered_threshold")
 
     # Find all cluster directories
