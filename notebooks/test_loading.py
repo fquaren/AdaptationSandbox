@@ -146,7 +146,6 @@ print("Reading from Zarr...")
 ds_zarr = xr.open_zarr(input_zarr_path, consolidated=True)
 print(ds_zarr)
 
-
 # Create both datasets
 ds_nc = SingleVariableDataset_v2("T_2M", *file_splits["train"], elev_dir)
 
