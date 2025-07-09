@@ -107,7 +107,7 @@ rsync -avz -e "ssh -J $REMOTE_USER@$FRONTEND_HOST" --files-from=$FILE_LIST $REMO
 cd $LOCAL_PATH
 while read file; do
     new_file="${file%.nz}_da.nz"
-    cdo selname,T_2M,RELHUM_2M,PS "$file" "$new_file"  # Using CDO to extract the variable
+    cdo selname,T_2M,RELHUM_2M,PS, "$file" "$new_file"  # Using CDO to extract the variable
     # Clean
     if [[ -f "$new_file" ]]; then
         rm "$file"

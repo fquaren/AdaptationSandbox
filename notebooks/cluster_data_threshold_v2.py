@@ -25,14 +25,18 @@ def compute_thresholds_for_subdir(subdir, input_dir, dem_dir):
         return [], [], []
 
     elevation_ds = xr.open_dataset(dem_path)
-    elevation_values.append(elevation_ds['HSURF'].values.mean())  # Store mean elevation
+    elevation_values.append(elevation_ds["HSURF"].values.mean())  # Store mean elevation
 
     # Process all NetCDF files in the subdirectory
-    files = [os.path.join(subdir_path, f) for f in os.listdir(subdir_path) if f.endswith(".nz")]
+    files = [
+        os.path.join(subdir_path, f)
+        for f in os.listdir(subdir_path)
+        if f.endswith(".nz")
+    ]
     for file in tqdm(files):
         with xr.open_dataset(file) as ds:
-            temperature_values.append(ds['T_2M'].values.mean())
-            humidity_values.append(ds['RELHUM_2M'].values.mean())
+            temperature_values.append(ds["T_2M"].values.mean())
+            humidity_values.append(ds["RELHUM_2M"].values.mean())
 
     return elevation_values, temperature_values, humidity_values
 
@@ -40,12 +44,19 @@ def compute_thresholds_for_subdir(subdir, input_dir, dem_dir):
 def compute_thresholds(input_dir, dem_dir, num_workers=None):
     """Compute the median (or mean) threshold for elevation, temperature, and humidity in parallel."""
     # Prepare the list of subdirectories to process
-    subdirs = [subdir for subdir in sorted(os.listdir(input_dir)) if os.path.isdir(os.path.join(input_dir, subdir))]
-    
+    subdirs = [
+        subdir
+        for subdir in sorted(os.listdir(input_dir))
+        if os.path.isdir(os.path.join(input_dir, subdir))
+    ]
+
     # Parallelize the task of computing the values for each subdirectory
     num_workers = num_workers or max(1, multiprocessing.cpu_count() - 1)
     with multiprocessing.Pool(processes=num_workers) as pool:
-        results = pool.starmap(compute_thresholds_for_subdir, [(subdir, input_dir, dem_dir) for subdir in subdirs])
+        results = pool.starmap(
+            compute_thresholds_for_subdir,
+            [(subdir, input_dir, dem_dir) for subdir in subdirs],
+        )
 
     # Flatten the results and aggregate the values
     elevation_values = []
@@ -62,11 +73,13 @@ def compute_thresholds(input_dir, dem_dir, num_workers=None):
     threshold_temp = np.median(temperature_values)
     threshold_hum = np.median(humidity_values)
 
-    print(f"Computed Thresholds:\n"
-          f"Elevation 33rd Percentile: {threshold_elev_33}\n"
-          f"Elevation 67th Percentile: {threshold_elev_67}\n"
-          f"Temperature Median: {threshold_temp}\n"
-          f"Humidity Median: {threshold_hum}")
+    print(
+        f"Computed Thresholds:\n"
+        f"Elevation 33rd Percentile: {threshold_elev_33}\n"
+        f"Elevation 67th Percentile: {threshold_elev_67}\n"
+        f"Temperature Median: {threshold_temp}\n"
+        f"Humidity Median: {threshold_hum}"
+    )
 
     return threshold_elev_33, threshold_elev_67, threshold_temp, threshold_hum
 
@@ -108,33 +121,39 @@ def process_file(args):
         return
 
     elevation_ds = xr.open_dataset(dem_path)
-    elevation = elevation_ds['HSURF'].values.mean()  # Compute mean elevation
+    elevation = elevation_ds["HSURF"].values.mean()  # Compute mean elevation
 
     # Open the NetCDF file and extract temperature & humidity
     with xr.open_dataset(file_path) as ds:
-        temperature = ds['T_2M'].values.mean()
-        humidity = ds['RELHUM_2M'].values.mean()
+        temperature = ds["T_2M"].values.mean()
+        humidity = ds["RELHUM_2M"].values.mean()
 
     # Classify the file into a cluster
     cluster = classify_cluster(elevation, temperature, humidity, thresholds)
-    print(f"File {os.path.basename(file_path)} (in {subdir}) classified into cluster {cluster}")
+    print(
+        f"File {os.path.basename(file_path)} (in {subdir}) classified into cluster {cluster}"
+    )
 
     # Copy file to the corresponding cluster folder
-    dest_path = os.path.join(output_dir, f'cluster_{cluster}', os.path.basename(file_path))
+    dest_path = os.path.join(
+        output_dir, f"cluster_{cluster}", os.path.basename(file_path)
+    )
     shutil.copy(file_path, dest_path)
     print(f"Copied {os.path.basename(file_path)} to cluster_{cluster}")
 
 
-def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, num_workers=1):
+def process_netcdf_files_parallel(
+    input_dir, dem_dir, output_dir, thresholds, num_workers=1
+):
     """Process all NetCDF files in parallel using multiprocessing."""
-    
+
     # Ensure cluster directories exist
     for i in range(12):
-        os.makedirs(os.path.join(output_dir, f'cluster_{i}'), exist_ok=True)
+        os.makedirs(os.path.join(output_dir, f"cluster_{i}"), exist_ok=True)
 
     # Create a list of files to process
     file_list = []
-    
+
     for subdir in sorted(os.listdir(input_dir)):  # Ensure sorted order
         subdir_path = os.path.join(input_dir, subdir)
 
@@ -147,14 +166,20 @@ def process_netcdf_files_parallel(input_dir, dem_dir, output_dir, thresholds, nu
         dem_path = os.path.join(dem_dir, dem_file)
 
         # Get all NetCDF files in the subdirectory
-        files = [os.path.join(subdir_path, f) for f in os.listdir(subdir_path) if f.endswith(".nz")]
+        files = [
+            os.path.join(subdir_path, f)
+            for f in os.listdir(subdir_path)
+            if f.endswith(".nz")
+        ]
 
         # Store arguments for parallel processing
         for file in files:
             file_list.append((file, dem_path, output_dir, thresholds))
 
     # Run in parallel using multiprocessing
-    num_workers = num_workers or max(1, multiprocessing.cpu_count() - 1)  # Use max available CPUs minus 1
+    num_workers = num_workers or max(
+        1, multiprocessing.cpu_count() - 1
+    )  # Use max available CPUs minus 1
     with multiprocessing.Pool(processes=num_workers) as pool:
         pool.map(process_file, file_list)
 
@@ -163,10 +188,14 @@ if __name__ == "__main__":
     data_dir = "/work/FAC/FGSE/IDYST/tbeucler/downscaling/fquareng/data"
     # data_dir = "/Users/fquareng/data"
     input_directory = os.path.join(data_dir, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded")
-    output_directory = os.path.join(data_dir, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12")
-    dem_directory =  os.path.join(data_dir, "dem_squares")
+    output_directory = os.path.join(
+        data_dir, "DA/1d-PS-RELHUM_2M-T_2M_cropped_gridded_clustered_threshold_12"
+    )
+    dem_directory = os.path.join(data_dir, "dem_squares")
 
     print("Computing thresholds...")
     computed_thresholds = compute_thresholds(input_directory, dem_directory)
 
-    process_netcdf_files_parallel(input_directory, dem_directory, output_directory, computed_thresholds)
+    process_netcdf_files_parallel(
+        input_directory, dem_directory, output_directory, computed_thresholds
+    )
